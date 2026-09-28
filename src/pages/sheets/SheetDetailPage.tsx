@@ -30,7 +30,11 @@ export const SheetDetailPage: React.FC = () => {
     setIsLoading(true);
     try {
       const data = await api.getSheetById(id);
-      setSheetData(data);
+      setSheetData({
+        ...data,
+        metadata: { ...data.metadata },
+        rows: [...data.rows],
+      });
     } finally {
       setIsLoading(false);
     }

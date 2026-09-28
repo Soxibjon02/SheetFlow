@@ -50,6 +50,25 @@ export const MySheetsPage: React.FC = () => {
     }
   };
 
+  const [notification, setNotification] = useState<string | null>(null);
+
+  const showNotice = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const handleDeleteSheet = async (sheetId: string, sheetName: string) => {
+    const confirmMsg =
+      lang === 'uz'
+        ? `Haqiqatan ham "${sheetName}" jadvalini oʻchirmoqchimisiz?`
+        : `Are you sure you want to delete "${sheetName}"?`;
+    if (window.confirm(confirmMsg)) {
+      await api.deleteSheet(sheetId);
+      setSheets((prev) => prev.filter((s) => s.id !== sheetId));
+      showNotice(lang === 'uz' ? `"${sheetName}" jadvali oʻchirildi.` : `Sheet "${sheetName}" deleted.`);
+    }
+  };
+
   const filteredSheets = sheets.filter((s) =>
     s.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
     (s.url && s.url.toLowerCase().includes(searchFilter.toLowerCase()))
@@ -57,6 +76,14 @@ export const MySheetsPage: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
+      {/* Toast Notification */}
+      {notification && (
+        <div className="fixed top-20 right-6 z-50 px-4 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs shadow-2xl shadow-emerald-500/30 flex items-center space-x-2 animate-in slide-in-from-top-4">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{notification}</span>
+        </div>
+      )}
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -187,6 +214,13 @@ export const MySheetsPage: React.FC = () => {
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${refreshingId === sheet.id ? 'animate-spin text-emerald-500' : ''}`}
                 />
+              </button>
+              <button
+                onClick={() => handleDeleteSheet(sheet.id, sheet.name)}
+                className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 transition cursor-pointer"
+                title={lang === 'uz' ? 'Jadvalni oʻchirish' : 'Delete Sheet'}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>

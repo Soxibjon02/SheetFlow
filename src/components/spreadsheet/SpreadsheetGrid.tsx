@@ -9,8 +9,6 @@ import {
   Filter,
   Check,
   X,
-  ChevronLeft,
-  ChevronRight,
   Hash,
   Type,
   Calendar,
@@ -64,8 +62,6 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 12;
 
   // Row edit modal / inline state
   const [editingRow, setEditingRow] = useState<SheetRow | null>(null);
@@ -114,13 +110,6 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
 
     return rows;
   }, [sheetData.rows, searchTerm, sortColumn, sortDirection, columns]);
-
-  // Pagination
-  const totalPages = Math.ceil(processedRows.length / rowsPerPage) || 1;
-  const paginatedRows = useMemo(() => {
-    const start = (currentPage - 1) * rowsPerPage;
-    return processedRows.slice(start, start + rowsPerPage);
-  }, [processedRows, currentPage]);
 
   const handleSort = (columnName: string) => {
     if (sortColumn === columnName) {
@@ -180,10 +169,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={t('searchRows')}
               className="w-full bg-white dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700/60 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50"
             />
@@ -207,12 +193,12 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
         </div>
       </div>
 
-      {/* Spreadsheet Table with Sticky Header */}
-      <div className="overflow-x-auto overflow-y-auto max-h-[600px] relative scrollbar-thin">
-        <table className="w-full text-left border-collapse text-xs">
+      {/* Spreadsheet Table with 2D Continuous Excel-style Scroll */}
+      <div className="overflow-auto max-h-[72vh] relative scrollbar-thin rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-inner">
+        <table className="w-full text-left border-collapse text-xs min-w-max">
           <thead className="bg-slate-100 dark:bg-slate-950 sticky top-0 z-20 shadow-sm border-b border-slate-200 dark:border-slate-800">
             <tr>
-              <th className="py-3 px-3 w-12 text-center text-slate-500 dark:text-slate-400 font-mono font-medium border-r border-slate-200 dark:border-slate-800/60 bg-slate-100 dark:bg-slate-950/90">
+              <th className="sticky left-0 top-0 z-30 py-3 px-3 w-14 text-center text-slate-500 dark:text-slate-400 font-mono font-bold border-r border-b border-slate-300 dark:border-slate-800 bg-slate-200 dark:bg-slate-950 shadow-sm">
                 #
               </th>
               {columns.map((col) => {
@@ -282,25 +268,25 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                   </th>
                 );
               })}
-              <th className="py-3 px-3 w-20 text-center font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-950/90">
+              <th className="sticky right-0 top-0 z-30 py-3 px-3 w-20 text-center font-medium text-slate-500 dark:text-slate-400 border-l border-b border-slate-300 dark:border-slate-800 bg-slate-200 dark:bg-slate-950 shadow-sm">
                 {lang === 'uz' ? 'Amallar' : 'Actions'}
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
-            {paginatedRows.length === 0 ? (
+            {processedRows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + 2} className="py-12 text-center text-slate-500 dark:text-slate-400">
                   {lang === 'uz' ? 'Qidiruv boʻyicha maʼlumot topilmadi.' : 'No records match your search query.'}
                 </td>
               </tr>
             ) : (
-              paginatedRows.map((row) => (
+              processedRows.map((row) => (
                 <tr
-                  key={row._rowIndex}
+                  key={row._rowIndex || row.id}
                   className="hover:bg-slate-100/70 dark:hover:bg-slate-800/40 transition group font-mono text-slate-800 dark:text-slate-300"
                 >
-                  <td className="py-2.5 px-3 text-center text-slate-400 dark:text-slate-500 select-none border-r border-slate-200 dark:border-slate-800/40 bg-slate-50 dark:bg-slate-950/30">
+                  <td className="sticky left-0 z-10 py-2.5 px-3 text-center text-slate-500 dark:text-slate-400 select-none border-r border-slate-200 dark:border-slate-800/60 bg-slate-100/95 dark:bg-slate-950/95 backdrop-blur-sm font-semibold">
                     {row._rowIndex}
                   </td>
                   {columns.map((col) => {
@@ -313,7 +299,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                     return (
                       <td
                         key={col.id}
-                        className="py-2.5 px-4 border-r border-slate-200 dark:border-slate-800/40 truncate max-w-[220px]"
+                        className="py-2.5 px-4 border-r border-slate-200 dark:border-slate-800/40 truncate max-w-[240px]"
                       >
                         {col.detectedType === 'boolean' ? (
                           <span
@@ -335,7 +321,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                       </td>
                     );
                   })}
-                  <td className="py-2.5 px-3 text-center">
+                  <td className="sticky right-0 z-10 py-2.5 px-3 text-center border-l border-slate-200 dark:border-slate-800/60 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm">
                     <div className="flex items-center justify-center space-x-1.5 opacity-60 group-hover:opacity-100 transition">
                       <button
                         onClick={() => setEditingRow({ ...row })}
@@ -360,30 +346,36 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
         </table>
       </div>
 
-      {/* Pagination Footer */}
-      <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-        <div>
-          {lang === 'uz' ? (
-            <span><strong className="text-slate-900 dark:text-slate-200">{currentPage}</strong> / {totalPages} sahifa</span>
-          ) : (
-            <span>Page <strong className="text-slate-900 dark:text-slate-200">{currentPage}</strong> of {totalPages}</span>
+      {/* Excel-style Continuous Scroll Status Bar */}
+      <div className="p-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex flex-wrap items-center justify-between text-xs text-slate-600 dark:text-slate-400 rounded-b-2xl">
+        <div className="flex items-center space-x-3">
+          <span className="font-medium">
+            {lang === 'uz' ? (
+              <>Jami: <strong className="text-slate-900 dark:text-slate-100 font-mono font-bold">{processedRows.length}</strong> ta qator</>
+            ) : (
+              <>Total: <strong className="text-slate-900 dark:text-slate-100 font-mono font-bold">{processedRows.length}</strong> rows</>
+            )}
+          </span>
+          <span className="text-slate-300 dark:text-slate-700">|</span>
+          <span className="font-medium">
+            {lang === 'uz' ? (
+              <><strong className="text-slate-900 dark:text-slate-100 font-mono font-bold">{columns.length}</strong> ta ustun</>
+            ) : (
+              <><strong className="text-slate-900 dark:text-slate-100 font-mono font-bold">{columns.length}</strong> columns</>
+            )}
+          </span>
+          {searchTerm && (
+            <>
+              <span className="text-slate-300 dark:text-slate-700">|</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                {lang === 'uz' ? `"${searchTerm}" boʻyicha qidirildi` : `Filtered by "${searchTerm}"`}
+              </span>
+            </>
           )}
         </div>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
+        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center space-x-2">
+          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>{lang === 'uz' ? 'Excel uslubida 2D aylantirish (Pastga va Yonga toʻliq scroll)' : 'Excel-style 2D continuous vertical & horizontal scroll'}</span>
         </div>
       </div>
 

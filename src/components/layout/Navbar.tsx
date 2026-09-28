@@ -2,18 +2,27 @@ import React from 'react';
 import { useAuth } from '../../lib/auth';
 import { useTheme } from '../../lib/theme';
 import { useI18n } from '../../lib/i18n';
-import { Sun, Moon, Globe, CheckCircle2, AlertCircle, Sparkles, Database } from 'lucide-react';
+import { Sun, Moon, Globe, CheckCircle2, AlertCircle, Sparkles, Database, Menu } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useNav } from '../../lib/nav';
 
 export const Navbar: React.FC = () => {
   const { user, connectGoogle } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { lang, setLang, t } = useI18n();
+  const { toggleMobileNav } = useNav();
 
   return (
-    <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30 transition-colors duration-200">
+    <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/80 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between sticky top-0 z-30 transition-colors duration-200">
       {/* Brand logo & tag */}
-      <div className="flex items-center space-x-3">
+      <div className="flex items-center space-x-2 sm:space-x-3">
+        <button
+          onClick={toggleMobileNav}
+          aria-label="Toggle mobile menu"
+          className="p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition md:hidden cursor-pointer"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
         <Link to="/dashboard" className="flex items-center space-x-2 group">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
             <svg

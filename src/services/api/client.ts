@@ -70,6 +70,10 @@ class SheetFlowApiClient {
     return mockService.connectSheet(data);
   }
 
+  async deleteSheet(id: string): Promise<boolean> {
+    return mockService.deleteSheet(id);
+  }
+
   async addRow(sheetId: string, row: Record<string, any>): Promise<SheetRow> {
     return mockService.addRow(sheetId, row);
   }

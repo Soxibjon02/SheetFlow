@@ -171,11 +171,11 @@ export const DashboardsPage: React.FC = () => {
           <select
             value={selectedSheetId}
             onChange={(e) => setSelectedSheetId(e.target.value)}
-            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
+            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 min-w-[200px]"
           >
             {sheets.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
+              <option key={s.id} value={s.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                {s.name || s.title || 'Google Sheet'}
               </option>
             ))}
           </select>

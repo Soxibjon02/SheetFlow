@@ -1328,23 +1328,45 @@ class AccountingService {
     let imported = 0;
     const errors: string[] = [];
 
+    // Remove previous imported entries to avoid duplicates on re-sync
+    this.journalEntries = this.journalEntries.filter(
+      (e) => !e.reference?.startsWith('GSHEET-')
+    );
+
+    // If mapping didn't specify revenue or expense column, detect any numeric columns in rows
+    let autoNumCols: string[] = [];
+    if (!mapping.revenueColumn && !mapping.expenseColumn && rows.length > 0) {
+      const sample = rows[0] || {};
+      autoNumCols = Object.keys(sample).filter((key) => {
+        if (key.startsWith('_') || key.toLowerCase().includes('id') || key.toLowerCase().includes('t/r')) return false;
+        const val = parseFloat(String(sample[key]).replace(/[^0-9.-]/g, ''));
+        return !isNaN(val) && val > 0;
+      });
+    }
+
     rows.forEach((row, idx) => {
       const date = mapping.dateColumn ? String(row[mapping.dateColumn] || '') : new Date().toISOString().split('T')[0];
-      const desc = mapping.descriptionColumn ? String(row[mapping.descriptionColumn] || '') : `Imported Sheet Row #${idx + 1}`;
+      const descCandidate = mapping.descriptionColumn
+        ? String(row[mapping.descriptionColumn] || '')
+        : Object.keys(row).find((k) => typeof row[k] === 'string' && !k.startsWith('_') && String(row[k]).trim().length > 1)
+        ? String(row[Object.keys(row).find((k) => typeof row[k] === 'string' && !k.startsWith('_') && String(row[k]).trim().length > 1)!])
+        : `Google Sheet #${idx + 1}`;
+      const desc = descCandidate || `Google Sheet Qator #${idx + 1}`;
+
       const revVal = mapping.revenueColumn ? parseFloat(String(row[mapping.revenueColumn]).replace(/[^0-9.-]/g, '')) : 0;
       const expVal = mapping.expenseColumn ? parseFloat(String(row[mapping.expenseColumn]).replace(/[^0-9.-]/g, '')) : 0;
 
       if (!isNaN(revVal) && revVal > 0) {
         try {
           this.createJournalEntry({
-            date: date || '2026-02-01',
-            description: desc || 'Revenue from spreadsheet',
+            date: date || new Date().toISOString().split('T')[0],
+            description: `${desc} (Daromad)`,
             reference: `GSHEET-ROW-${idx + 1}`,
             currency: 'USD',
             status: 'Posted',
             lines: [
-              { accountId: 'acc_1020', debit: revVal, credit: 0, description: 'Bank deposit' },
-              { accountId: 'acc_4010', debit: 0, credit: revVal, description: 'Sales revenue recognized' },
+              { accountId: 'acc_1020', debit: revVal, credit: 0, description: 'Bank tushumi / Deposit' },
+              { accountId: 'acc_4010', debit: 0, credit: revVal, description: 'Sotuv tushumi / Sales revenue' },
             ],
           });
           imported++;
@@ -1354,19 +1376,44 @@ class AccountingService {
       } else if (!isNaN(expVal) && expVal > 0) {
         try {
           this.createJournalEntry({
-            date: date || '2026-02-01',
-            description: desc || 'Expense from spreadsheet',
+            date: date || new Date().toISOString().split('T')[0],
+            description: `${desc} (Xarajat)`,
             reference: `GSHEET-ROW-${idx + 1}`,
             currency: 'USD',
             status: 'Posted',
             lines: [
-              { accountId: 'acc_6080', debit: expVal, credit: 0, description: 'General operational expense' },
-              { accountId: 'acc_1020', debit: 0, credit: expVal, description: 'Bank payment' },
+              { accountId: 'acc_6080', debit: expVal, credit: 0, description: 'Operatsion xarajat / Operational expense' },
+              { accountId: 'acc_1020', debit: 0, credit: expVal, description: 'Bank toʻlovi / Bank payment' },
             ],
           });
           imported++;
         } catch (e: any) {
           errors.push(`Row #${idx + 1}: ${e.message}`);
+        }
+      } else if (autoNumCols.length > 0) {
+        let totalRowAmount = 0;
+        autoNumCols.forEach((col) => {
+          const val = parseFloat(String(row[col]).replace(/[^0-9.-]/g, ''));
+          if (!isNaN(val) && val > 0) totalRowAmount += val;
+        });
+
+        if (totalRowAmount > 0) {
+          try {
+            this.createJournalEntry({
+              date: date || new Date().toISOString().split('T')[0],
+              description: `${desc} (${autoNumCols.join(', ')})`,
+              reference: `GSHEET-ROW-${idx + 1}`,
+              currency: 'USD',
+              status: 'Posted',
+              lines: [
+                { accountId: 'acc_1020', debit: totalRowAmount, credit: 0, description: 'Bank tushumi / Bank receipt' },
+                { accountId: 'acc_4010', debit: 0, credit: totalRowAmount, description: 'Sotuv daromadi / Sales revenue' },
+              ],
+            });
+            imported++;
+          } catch (e: any) {
+            errors.push(`Row #${idx + 1}: ${e.message}`);
+          }
         }
       }
     });

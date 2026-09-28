@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './lib/auth';
 import { ThemeProvider } from './lib/theme';
 import { I18nProvider } from './lib/i18n';
+import { NavProvider } from './lib/nav';
 import { AppLayout } from './components/layout/AppLayout';
 
 import { DashboardPage } from './pages/dashboard/DashboardPage';
@@ -33,25 +34,27 @@ export default function App() {
       <ThemeProvider>
         <I18nProvider>
           <AuthProvider>
-            <BrowserRouter>
-              <Routes>
-                <Route element={<AppLayout />}>
-                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/sheets" element={<MySheetsPage />} />
-                  <Route path="/sheets/:id" element={<SheetDetailPage />} />
-                  <Route path="/analytics" element={<AnalyticsPage />} />
-                  <Route path="/calculations" element={<CalculationsPage />} />
-                  <Route path="/dashboards" element={<DashboardsPage />} />
-                  <Route path="/accounting" element={<AccountingPage />} />
-                  <Route path="/economy" element={<EconomyPage />} />
-                  <Route path="/templates" element={<TemplatesPage />} />
-                  <Route path="/reports" element={<ReportsPage />} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                </Route>
-              </Routes>
-            </BrowserRouter>
+            <NavProvider>
+              <BrowserRouter>
+                <Routes>
+                  <Route element={<AppLayout />}>
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                    <Route path="/dashboard" element={<DashboardPage />} />
+                    <Route path="/sheets" element={<MySheetsPage />} />
+                    <Route path="/sheets/:id" element={<SheetDetailPage />} />
+                    <Route path="/analytics" element={<AnalyticsPage />} />
+                    <Route path="/calculations" element={<CalculationsPage />} />
+                    <Route path="/dashboards" element={<DashboardsPage />} />
+                    <Route path="/accounting" element={<AccountingPage />} />
+                    <Route path="/economy" element={<EconomyPage />} />
+                    <Route path="/templates" element={<TemplatesPage />} />
+                    <Route path="/reports" element={<ReportsPage />} />
+                    <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Route>
+                </Routes>
+              </BrowserRouter>
+            </NavProvider>
           </AuthProvider>
         </I18nProvider>
       </ThemeProvider>

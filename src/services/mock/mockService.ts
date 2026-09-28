@@ -179,6 +179,7 @@ export class BrowserMockService {
     return this.sheets.map((s) => ({
       id: s.metadata.id,
       name: s.metadata.name,
+      title: s.metadata.name,
       url: s.metadata.url,
       selectedTab: s.metadata.selectedTab,
       rowCount: s.metadata.rowCount,
@@ -192,7 +193,17 @@ export class BrowserMockService {
   async getSheetById(id: string): Promise<SheetData> {
     const s = this.sheets.find((sheet) => sheet.metadata.id === id);
     if (!s) throw new Error('Sheet not found.');
-    return s;
+    return {
+      metadata: { ...s.metadata },
+      headers: [...s.headers],
+      rows: s.rows.map((r) => ({ ...r })),
+    };
+  }
+
+  async deleteSheet(id: string): Promise<boolean> {
+    this.sheets = this.sheets.filter((sheet) => sheet.metadata.id !== id);
+    saveStoredSheets(this.sheets);
+    return true;
   }
 
   async connectSheet(data: any): Promise<SheetData> {
@@ -218,32 +229,52 @@ export class BrowserMockService {
   }
 
   async addRow(sheetId: string, row: Record<string, any>): Promise<SheetRow> {
-    const sheet = await this.getSheetById(sheetId);
-    const newRow = { _rowIndex: sheet.rows.length + 2, ...row };
-    sheet.rows.push(newRow);
-    sheet.metadata.rowCount = sheet.rows.length;
-    sheet.metadata.lastSyncedAt = new Date().toISOString();
+    const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
+    if (!sheet) throw new Error('Sheet not found.');
+    const maxRowIndex = sheet.rows.reduce((max, r) => Math.max(max, Number(r._rowIndex) || 0), 1);
+    const newRow = { ...row, _rowIndex: maxRowIndex + 1, id: `row_${Date.now()}` };
+    sheet.rows = [...sheet.rows, newRow];
+    sheet.metadata = {
+      ...sheet.metadata,
+      rowCount: sheet.rows.length,
+      lastSyncedAt: new Date().toISOString(),
+    };
     saveStoredSheets(this.sheets);
     return newRow;
   }
 
   async updateRow(sheetId: string, rowIndex: number, row: Record<string, any>): Promise<SheetRow> {
-    const sheet = await this.getSheetById(sheetId);
-    const idx = sheet.rows.findIndex((r) => r._rowIndex === rowIndex || r.id === rowIndex);
+    const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
+    if (!sheet) throw new Error('Sheet not found.');
+    const idx = sheet.rows.findIndex(
+      (r, i) => r._rowIndex === rowIndex || r.id === rowIndex || i === rowIndex - 2 || i === rowIndex
+    );
     if (idx >= 0) {
-      sheet.rows[idx] = { ...sheet.rows[idx], ...row };
-      sheet.metadata.lastSyncedAt = new Date().toISOString();
+      const updatedRow = { ...sheet.rows[idx], ...row, _rowIndex: sheet.rows[idx]._rowIndex };
+      const updatedRows = [...sheet.rows];
+      updatedRows[idx] = updatedRow;
+      sheet.rows = updatedRows;
+      sheet.metadata = {
+        ...sheet.metadata,
+        lastSyncedAt: new Date().toISOString(),
+      };
       saveStoredSheets(this.sheets);
-      return sheet.rows[idx];
+      return updatedRow;
     }
     throw new Error('Row not found.');
   }
 
   async deleteRow(sheetId: string, rowIndex: number): Promise<boolean> {
-    const sheet = await this.getSheetById(sheetId);
-    sheet.rows = sheet.rows.filter((r) => r._rowIndex !== rowIndex && r.id !== rowIndex);
-    sheet.metadata.rowCount = sheet.rows.length;
-    sheet.metadata.lastSyncedAt = new Date().toISOString();
+    const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
+    if (!sheet) throw new Error('Sheet not found.');
+    sheet.rows = sheet.rows.filter(
+      (r, i) => r._rowIndex !== rowIndex && r.id !== rowIndex && i !== rowIndex - 2 && i !== rowIndex
+    );
+    sheet.metadata = {
+      ...sheet.metadata,
+      rowCount: sheet.rows.length,
+      lastSyncedAt: new Date().toISOString(),
+    };
     saveStoredSheets(this.sheets);
     return true;
   }

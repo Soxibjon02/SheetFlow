@@ -213,20 +213,20 @@ export const EconomyPage: React.FC = () => {
         </div>
 
         {/* Google Sheets Connect Selector */}
-        <div className="flex items-center space-x-3 relative z-10 bg-white/70 dark:bg-slate-900/80 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-          <Database className="w-4 h-4 text-blue-500" />
-          <div className="text-left">
+        <div className="flex items-center space-x-3 relative z-10 bg-white dark:bg-slate-900 p-2.5 px-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm min-w-[220px]">
+          <Database className="w-4 h-4 text-blue-500 shrink-0" />
+          <div className="text-left w-full">
             <div className="text-[10px] uppercase font-bold text-slate-400">
-              {lang === 'uz' ? 'Uланган Google Sheet' : 'Linked Google Sheet'}
+              {lang === 'uz' ? 'Ulangan Google Sheet' : 'Linked Google Sheet'}
             </div>
             <select
               value={selectedSheetId}
               onChange={(e) => handleSheetChange(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none cursor-pointer pr-4"
+              className="w-full bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
             >
               {sheets.map((s) => (
-                <option key={s.id} value={s.id} className="dark:bg-slate-900">
-                  {s.title}
+                <option key={s.id} value={s.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1">
+                  {s.name || s.title || 'Google Sheet'}
                 </option>
               ))}
             </select>
