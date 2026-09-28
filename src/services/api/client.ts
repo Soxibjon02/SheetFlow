@@ -62,6 +62,10 @@ class SheetFlowApiClient {
     return mockService.getSheetById(id);
   }
 
+  async getSheet(id: string): Promise<SheetData> {
+    return mockService.getSheetById(id);
+  }
+
   async connectSheet(data: any): Promise<SheetData> {
     return mockService.connectSheet(data);
   }

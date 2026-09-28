@@ -35,7 +35,9 @@ export type FunctionCategory =
   | 'Data'
   | 'Date'
   | 'Text'
-  | 'Percentage';
+  | 'Percentage'
+  | 'Accounting'
+  | 'Economy';
 
 export type VisualizationType =
   | 'kpi'

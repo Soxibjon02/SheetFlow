@@ -282,20 +282,20 @@ export const AnalyticsPage: React.FC = () => {
                   <td className="py-3 px-3 font-semibold text-slate-900 dark:text-white font-sans">{col.column}</td>
                   <td className="py-3 px-3">
                     <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] border border-slate-200 dark:border-slate-700">
-                      {col.detectedType}
+                      {col.type}
                     </span>
                   </td>
                   <td className="py-3 px-3">{col.uniqueCount}</td>
                   <td className="py-3 px-3">
-                    <span className={col.missingCount > 0 ? 'text-amber-500 font-bold' : 'text-slate-400'}>
-                      {col.missingCount}
+                    <span className={col.nullCount > 0 ? 'text-amber-500 font-bold' : 'text-slate-400'}>
+                      {col.nullCount}
                     </span>
                   </td>
                   <td className="py-3 px-3 text-slate-500 dark:text-slate-400 truncate max-w-xs">
                     {col.min !== undefined && col.max !== undefined
                       ? `[${col.min} ... ${col.max}]`
                       : col.topValues
-                      ? col.topValues.join(', ')
+                      ? col.topValues.map((tv: any) => (typeof tv === 'object' ? tv.value : tv)).join(', ')
                       : '-'}
                   </td>
                 </tr>

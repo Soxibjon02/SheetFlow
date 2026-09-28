@@ -796,7 +796,7 @@ class AccountingService {
     date: string;
     description: string;
     reference: string;
-    currency: string;
+    currency?: string;
     lines: {
       accountId: string;
       debit: number;
