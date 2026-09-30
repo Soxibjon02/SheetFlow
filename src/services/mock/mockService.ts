@@ -160,17 +160,37 @@ function saveStoredAnalyses(analyses: SavedAnalysis[]) {
   } catch {}
 }
 
+const STORAGE_DELETED_SHEETS_KEY = 'sheetflow_deleted_sheet_ids';
+
+export function getDeletedSheetIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_DELETED_SHEETS_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+}
+
+export function recordDeletedSheetId(id: string) {
+  try {
+    const current = getDeletedSheetIds();
+    current.add(id);
+    localStorage.setItem(STORAGE_DELETED_SHEETS_KEY, JSON.stringify(Array.from(current)));
+  } catch {}
+}
+
 function loadStoredSheets(): SheetData[] {
+  const deleted = getDeletedSheetIds();
   try {
     const raw = localStorage.getItem(STORAGE_SHEETS_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((s) => !deleted.has(s.metadata.id));
       }
     }
   } catch {}
-  const initial = getInitialSampleSheets();
+  // Only first time: filter out any explicitly deleted sheets
+  const initial = getInitialSampleSheets().filter((s) => !deleted.has(s.metadata.id));
   saveStoredSheets(initial);
   return initial;
 }
@@ -418,27 +438,30 @@ export class BrowserMockService {
   private isHydratedFromNeon = false;
 
   async getSheets(): Promise<any[]> {
+    const deleted = getDeletedSheetIds();
     if (neonService.isConfigured() && !this.isHydratedFromNeon) {
       try {
         const dbSheets = await neonService.loadSheets();
         if (dbSheets && dbSheets.length > 0) {
-          const merged = [...dbSheets];
+          const filteredDb = dbSheets.filter((d) => !deleted.has(d.metadata.id));
+          const merged = [...filteredDb];
           for (const local of this.sheets) {
-            if (!merged.some((m) => m.metadata.id === local.metadata.id)) {
+            if (!deleted.has(local.metadata.id) && !merged.some((m) => m.metadata.id === local.metadata.id)) {
               merged.push(local);
               neonService.saveSheet(local).catch(() => {});
             }
           }
           this.sheets = merged;
           saveStoredSheets(this.sheets);
-        } else if (dbSheets && dbSheets.length === 0 && this.sheets.length > 0) {
-          neonService.syncAllToNeon(this.sheets).catch(() => {});
         }
         this.isHydratedFromNeon = true;
       } catch (err) {
         console.warn('Neon hydration error:', err);
       }
     }
+
+    // Always filter out any deleted sheets
+    this.sheets = this.sheets.filter((s) => !deleted.has(s.metadata.id));
 
     // Auto-repair any sheets with generic headers
     for (const s of this.sheets) {
@@ -484,11 +507,19 @@ export class BrowserMockService {
   }
 
   async deleteSheet(id: string): Promise<boolean> {
+    recordDeletedSheetId(id);
     this.sheets = this.sheets.filter((sheet) => sheet.metadata.id !== id);
     saveStoredSheets(this.sheets);
     if (neonService.isConfigured()) {
-      neonService.deleteSheet(id).catch(console.error);
+      try {
+        await neonService.deleteSheet(id);
+      } catch (err) {
+        console.error('Failed to delete sheet from Neon:', err);
+      }
     }
+    try {
+      await fetch(`/api/sheets/${id}`, { method: 'DELETE' });
+    } catch {}
     return true;
   }
 

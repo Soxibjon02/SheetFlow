@@ -174,6 +174,14 @@ export async function handleApiRequest(
         return { status: 200, body: successResponse(sheet) };
       }
 
+      if (subPath === '' && method === 'DELETE') {
+        const idx = mockSheets.findIndex((s) => s.metadata.id === id);
+        if (idx >= 0) {
+          mockSheets.splice(idx, 1);
+        }
+        return { status: 200, body: successResponse({ deleted: true }) };
+      }
+
       if (subPath === '/data' && method === 'GET') {
         return { status: 200, body: successResponse(sheet.rows) };
       }
