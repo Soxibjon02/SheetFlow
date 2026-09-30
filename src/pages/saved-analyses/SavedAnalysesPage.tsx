@@ -22,6 +22,7 @@ import {
   Table as TableIcon,
   X,
   CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const SavedAnalysesPage: React.FC = () => {
@@ -36,6 +37,9 @@ export const SavedAnalysesPage: React.FC = () => {
   const [activeSheetData, setActiveSheetData] = useState<SheetData | null>(null);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
+
+  const [deletingAnalysis, setDeletingAnalysis] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadSavedAnalyses = async () => {
     setIsLoading(true);
@@ -56,15 +60,26 @@ export const SavedAnalysesPage: React.FC = () => {
     setTimeout(() => setNotification(null), 3500);
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (confirm(isUz ? `"${name}" tahlilini o‘chirishni xohlaysizmi?` : `Delete saved analysis "${name}"?`)) {
-      await api.deleteAnalysis(id);
-      if (activeAnalysis?.id === id) {
+  const handleConfirmDelete = async () => {
+    if (!deletingAnalysis) return;
+    setIsDeleting(true);
+    try {
+      await api.deleteAnalysis(deletingAnalysis.id);
+      if (activeAnalysis?.id === deletingAnalysis.id) {
         setActiveAnalysis(null);
         setActiveSheetData(null);
       }
-      showNotice(isUz ? `✓ "${name}" o‘chirildi` : `✓ Deleted analysis "${name}"`);
-      await loadSavedAnalyses();
+      setAnalyses((prev) => prev.filter((a) => a.id !== deletingAnalysis.id));
+      showNotice(
+        isUz
+          ? `✓ "${deletingAnalysis.name}" tahlili butunlay o‘chirildi.`
+          : `✓ Deleted analysis "${deletingAnalysis.name}"`
+      );
+      setDeletingAnalysis(null);
+    } catch (err: any) {
+      alert(err.message || 'Error deleting analysis');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -282,8 +297,8 @@ export const SavedAnalysesPage: React.FC = () => {
                     </div>
 
                     <button
-                      onClick={() => handleDelete(analysis.id, analysis.name)}
-                      className="text-slate-400 hover:text-rose-500 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                      onClick={() => setDeletingAnalysis({ id: analysis.id, name: analysis.name })}
+                      className="text-slate-400 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                       title={isUz ? 'O‘chirish' : 'Delete'}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -304,6 +319,14 @@ export const SavedAnalysesPage: React.FC = () => {
                       </span>
                     )}
                   </div>
+
+                  {/* Author / Modified By */}
+                  {analysis.authorEmail && (
+                    <div className="text-[10px] text-slate-400 truncate">
+                      <span>{isUz ? 'Muallif: ' : 'Author: '}</span>
+                      <span className="text-slate-600 dark:text-slate-300 font-medium">{analysis.authorEmail}</span>
+                    </div>
+                  )}
 
                   {/* Insights preview */}
                   {analysis.insights && analysis.insights.length > 0 && (
@@ -335,6 +358,62 @@ export const SavedAnalysesPage: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingAnalysis && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <button
+                onClick={() => !isDeleting && setDeletingAnalysis(null)}
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                {isUz ? 'Tahlilni o‘chirishni tasdiqlaysizmi?' : 'Confirm Analysis Deletion'}
+              </h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {isUz ? (
+                  <>
+                    <strong className="text-slate-800 dark:text-slate-200 font-semibold">"{deletingAnalysis.name}"</strong> nomli saqlangan tahlil tizimdan butunlay o‘chiriladi. Bu amalni qaytarib bo‘lmaydi.
+                  </>
+                ) : (
+                  <>
+                    Analysis <strong className="text-slate-800 dark:text-slate-200 font-semibold">"{deletingAnalysis.name}"</strong> will be permanently removed. This cannot be undone.
+                  </>
+                )}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeletingAnalysis(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                {isUz ? 'Bekor qilish' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/30 transition flex items-center space-x-2 disabled:opacity-50 cursor-pointer"
+              >
+                {isDeleting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>{isUz ? 'Ha, o‘chirilsin' : 'Yes, Delete'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

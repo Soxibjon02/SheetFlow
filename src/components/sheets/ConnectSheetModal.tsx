@@ -15,6 +15,7 @@ import {
   Search,
   Clipboard,
   Info,
+  RefreshCw,
 } from 'lucide-react';
 
 interface ConnectSheetModalProps {
@@ -48,9 +49,11 @@ export const ConnectSheetModal: React.FC<ConnectSheetModalProps> = ({
 
     try {
       const res = await api.previewSheet(inputContent);
-      if (connectTab === 'paste' && customSheetName.trim()) {
-        res.spreadsheetName = customSheetName.trim();
-      }
+      const initialName = (connectTab === 'paste' && customSheetName.trim())
+        ? customSheetName.trim()
+        : res.spreadsheetName;
+      setCustomSheetName(initialName);
+      res.spreadsheetName = initialName;
       setPreviewData(res);
     } catch (err: any) {
       const defaultErr = lang === 'uz'
@@ -65,14 +68,17 @@ export const ConnectSheetModal: React.FC<ConnectSheetModalProps> = ({
   const handleConnect = async () => {
     if (!previewData) return;
     setIsLoading(true);
+    setErrorMsg(null);
     try {
       const rowsToSave = (previewData.allRows && previewData.allRows.length > 0)
         ? previewData.allRows
         : previewData.sampleRows;
 
+      const finalName = customSheetName.trim() || previewData.spreadsheetName || 'Connected Sheet';
+
       const created = await api.connectSheet({
         id: previewData.spreadsheetId,
-        name: previewData.spreadsheetName,
+        name: finalName,
         url: previewData.spreadsheetUrl,
         selectedTab: previewData.selectedTab,
         rowCount: rowsToSave.length || previewData.rowCount,
@@ -80,6 +86,7 @@ export const ConnectSheetModal: React.FC<ConnectSheetModalProps> = ({
         columns: previewData.columns,
         rows: rowsToSave,
       });
+
       onConnected(created.metadata.id);
       onClose();
     } catch (err: any) {
@@ -301,16 +308,33 @@ export const ConnectSheetModal: React.FC<ConnectSheetModalProps> = ({
           {/* Preview Results (MODE A per Section 6) */}
           {previewData && (
             <div className="p-5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-emerald-500/30 space-y-5 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 gap-2">
                 <div className="flex items-center space-x-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                    {previewData.spreadsheetName}
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 dark:text-emerald-400 shrink-0" />
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                    {customSheetName || previewData.spreadsheetName}
                   </h4>
                 </div>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20">
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20 self-start sm:self-auto">
                   {lang === 'uz' ? 'Ulashga tayyor' : 'Ready to Connect'}
                 </span>
+              </div>
+
+              {/* Spreadsheet Name on Platform Input */}
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1.5 shadow-sm">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                  <span>{lang === 'uz' ? 'Jadval nomi (Platformada ko‘rinadigan nom):' : 'Spreadsheet Name on Platform:'}</span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal">
+                    {lang === 'uz' ? 'Ixtiyoriy nom berishingiz mumkin' : 'Custom name'}
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={customSheetName}
+                  onChange={(e) => setCustomSheetName(e.target.value)}
+                  placeholder={previewData.spreadsheetName || (lang === 'uz' ? 'Masalan: 9-sinf O‘quvchilari...' : 'e.g., Marketing Budget 2026')}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
               </div>
 
               {/* Stats Bar */}
@@ -415,10 +439,11 @@ export const ConnectSheetModal: React.FC<ConnectSheetModalProps> = ({
               type="button"
               onClick={handleConnect}
               disabled={isLoading}
-              className="flex items-center space-x-2 px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition cursor-pointer"
+              className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition cursor-pointer disabled:opacity-50"
             >
-              <span>{t('connectSheet')}</span>
-              <ArrowRight className="w-4 h-4" />
+              {isLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
+              <span>{isLoading ? (lang === 'uz' ? 'Ulanmoqda...' : 'Connecting...') : t('connectSheet')}</span>
+              {!isLoading && <ArrowRight className="w-4 h-4" />}
             </button>
           )}
         </div>

@@ -33,6 +33,7 @@ export interface SheetMetadata {
   columnCount: number;
   columns: ColumnDefinition[];
   lastSyncedAt?: string;
+  lastModifiedBy?: string;
   userRole?: 'owner' | 'editor' | 'viewer';
 }
 

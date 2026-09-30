@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Database,
   Table,
+  Copy,
 } from 'lucide-react';
 import { api } from '../../services/api/client';
 import { useI18n } from '../../lib/i18n';
@@ -592,6 +593,26 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     document.body.removeChild(link);
   };
 
+  // 9. Copy to Clipboard for Google Sheets (Ctrl+C TSV)
+  const handleCopyTsv = async () => {
+    try {
+      const headers = localColumns.map((c) => c.name).join('\t');
+      const rowsText = processedRows.map((row) =>
+        localColumns.map((col) => row[col.name] !== undefined && row[col.name] !== null ? String(row[col.name]) : '').join('\t')
+      );
+      const tsvContent = [headers, ...rowsText].join('\n');
+      await navigator.clipboard.writeText(tsvContent);
+      setSaveSuccessMessage(
+        isUz
+          ? '✓ Katakchalar nusxalandi! Google Sheets-ga to‘g‘ridan-to‘g‘ri (Ctrl+V) qo‘yishingiz mumkin.'
+          : '✓ Copied to clipboard! You can paste directly (Ctrl+V) into Google Sheets.'
+      );
+      setTimeout(() => setSaveSuccessMessage(null), 4000);
+    } catch {
+      handleDownloadCsv();
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 backdrop-blur-md shadow-xl overflow-hidden flex flex-col transition-colors duration-200">
       {/* UNSAVED CHANGES BANNER (Section 15) */}
@@ -761,7 +782,17 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
             title="Download CSV"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{isUz ? 'Yuklab olish' : 'Download'}</span>
+            <span>{isUz ? 'CSV yuklab olish' : 'Download CSV'}</span>
+          </button>
+
+          {/* Copy cells for Google Sheets */}
+          <button
+            onClick={handleCopyTsv}
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-medium text-xs border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+            title={isUz ? 'Google Sheets-ga qo‘yish uchun katakchalarni nusxalash' : 'Copy cells formatted for Google Sheets'}
+          >
+            <Copy className="w-3.5 h-3.5 text-emerald-500" />
+            <span>{isUz ? 'Nusxalash' : 'Copy'}</span>
           </button>
 
           {/* Save to Google Sheet CTA */}

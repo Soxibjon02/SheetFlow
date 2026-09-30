@@ -75,6 +75,10 @@ class SheetFlowApiClient {
     return mockService.deleteSheet(id);
   }
 
+  async updateSheetName(sheetId: string, newName: string): Promise<SheetData> {
+    return mockService.updateSheetName(sheetId, newName);
+  }
+
   async addRow(sheetId: string, row: Record<string, any>): Promise<SheetRow> {
     return mockService.addRow(sheetId, row);
   }

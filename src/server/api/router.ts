@@ -167,6 +167,83 @@ export async function handleApiRequest(
       const sheet = mockSheets.find((s) => s.metadata.id === id);
 
       if (!sheet) {
+        if (subPath === '/sync-google' && method === 'POST') {
+          const { tabName, headers: reqHeaders, rows: reqRows, webhookUrl } = body || {};
+          const spreadsheetId = id;
+          if (webhookUrl && webhookUrl.startsWith('http')) {
+            try {
+              const values = [
+                reqHeaders || [],
+                ...(reqRows || []).map((row: any) =>
+                  (reqHeaders || []).map((h: string) => (row[h] !== undefined && row[h] !== null ? row[h] : ''))
+                ),
+              ];
+              const resp = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'sync',
+                  spreadsheetId,
+                  tabName: tabName || 'Sheet1',
+                  values,
+                }),
+              });
+              if (resp.ok) {
+                return {
+                  status: 200,
+                  body: successResponse({
+                    synced: true,
+                    target: 'google_apps_script',
+                    message: 'Google Sheets Apps Script orqali muvaffaqiyatli yangilandi.',
+                  }),
+                };
+              }
+            } catch (webhookErr: any) {
+              console.warn('Webhook sync failed:', webhookErr);
+            }
+          }
+
+          const authHeader = headers?.['authorization'] || '';
+          const accessToken = authHeader.replace(/^Bearer\s+/i, '') || body?.accessToken;
+          if (accessToken && accessToken !== 'null' && !accessToken.startsWith('tok_')) {
+            try {
+              const result = await syncAllRowsToGoogleSheet(
+                accessToken,
+                spreadsheetId,
+                tabName || 'Sheet1',
+                reqHeaders || [],
+                reqRows || []
+              );
+              return {
+                status: 200,
+                body: successResponse({
+                  synced: true,
+                  target: 'google_api',
+                  result,
+                  message: 'Google Sheets API orqali muvaffaqiyatli saqlandi.',
+                }),
+              };
+            } catch (apiErr: any) {
+              return {
+                status: 400,
+                body: errorResponse(
+                  'GOOGLE_SYNC_FAILED',
+                  `Google Sheets API bilan saqlab bo‘lmadi: ${apiErr.message || 'Ruxsat xatosi'}`
+                ),
+              };
+            }
+          }
+
+          return {
+            status: 200,
+            body: successResponse({
+              synced: false,
+              target: 'local_database',
+              message:
+                'O‘zgarishlar SheetFlow va Neon bazasiga to‘liq saqlandi. Google Sheets-ga to‘g‘ridan-to‘g‘ri yozish uchun Google hisobiga tahrirchi (Editor) ruxsati yoki Google Apps Script Webhook havolasi kerak.',
+            }),
+          };
+        }
         return { status: 404, body: errorResponse('SHEET_NOT_FOUND', 'Spreadsheet not found.') };
       }
 

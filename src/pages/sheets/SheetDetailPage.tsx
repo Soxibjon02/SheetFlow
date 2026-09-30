@@ -8,6 +8,7 @@ import { checkDataQuality } from '../../core/cleaner/dataCleaner';
 import { calculate } from '../../core/calculations/engine';
 import { SavedAnalysis } from '../../core/types/analysis';
 import { useI18n } from '../../lib/i18n';
+import { useAuth } from '../../lib/auth';
 import {
   FileSpreadsheet,
   Calculator,
@@ -24,9 +25,13 @@ import {
   Calendar,
   Sparkles,
   AlertTriangle,
+  AlertCircle,
   ArrowUpRight,
   ChevronRight,
   TrendingUp,
+  Edit2,
+  Check,
+  X,
 } from 'lucide-react';
 
 export const SheetDetailPage: React.FC = () => {
@@ -36,16 +41,22 @@ export const SheetDetailPage: React.FC = () => {
 
   const { t, lang, currency } = useI18n();
   const isUz = lang === 'uz';
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'data' | 'analysis'>(initialTab);
   const [sheetData, setSheetData] = useState<SheetData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
+
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editedTitle, setEditedTitle] = useState('');
 
   const loadSheet = async () => {
     if (!id) return;
     setIsLoading(true);
+    setLoadError(null);
     try {
       const data = await api.getSheetById(id);
       setSheetData({
@@ -53,9 +64,29 @@ export const SheetDetailPage: React.FC = () => {
         metadata: { ...data.metadata },
         rows: [...data.rows],
       });
+      setEditedTitle(data.metadata.name);
       api.trackSheetOpened(id);
+    } catch (err: any) {
+      setLoadError(err.message || 'Sheet not found');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSaveTitle = async () => {
+    if (!sheetData || !editedTitle.trim()) {
+      setIsEditingTitle(false);
+      return;
+    }
+    const trimmed = editedTitle.trim();
+    try {
+      await api.updateSheetName(sheetData.metadata.id, trimmed);
+      setSheetData((prev) => (prev ? { ...prev, metadata: { ...prev.metadata, name: trimmed } } : null));
+      showNotice(isUz ? '✓ Jadval nomi yangilandi.' : '✓ Spreadsheet name updated.');
+    } catch (e: any) {
+      alert(e.message || 'Error updating name');
+    } finally {
+      setIsEditingTitle(false);
     }
   };
 
@@ -206,13 +237,38 @@ export const SheetDetailPage: React.FC = () => {
     return stats;
   }, [sheetData]);
 
-  if (isLoading || !sheetData) {
+  if (isLoading) {
     return (
       <div className="py-24 flex flex-col items-center justify-center space-y-3 text-slate-400">
         <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
         <p className="text-sm font-medium">
           {isUz ? 'Jadval maʼlumotlari yuklanmoqda...' : 'Loading spreadsheet workspace...'}
         </p>
+      </div>
+    );
+  }
+
+  if (loadError || !sheetData) {
+    return (
+      <div className="py-24 flex flex-col items-center justify-center space-y-4 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500">
+          <AlertCircle className="w-7 h-7" />
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+            {isUz ? 'Jadval topilmadi yoki yuklanmadi' : 'Spreadsheet not found'}
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md">
+            {loadError || (isUz ? 'Jadval o‘chirilgan yoki noto‘g‘ri ID ko‘rsatilgan.' : 'Spreadsheet was deleted or invalid ID.')}
+          </p>
+        </div>
+        <Link
+          to="/sheets"
+          className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>{isUz ? 'Jadvallarimga qaytish' : 'Back to My Sheets'}</span>
+        </Link>
       </div>
     );
   }
@@ -238,24 +294,84 @@ export const SheetDetailPage: React.FC = () => {
             <span>{isUz ? 'Jadvallarimga qaytish' : 'Back to My Sheets'}</span>
           </Link>
           <div className="flex items-center space-x-3">
-            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              {sheetData.metadata.name}
-            </h1>
+            {isEditingTitle ? (
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  value={editedTitle}
+                  onChange={(e) => setEditedTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveTitle();
+                    if (e.key === 'Escape') setIsEditingTitle(false);
+                  }}
+                  autoFocus
+                  className="text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 border border-emerald-500 rounded-lg px-2.5 py-1 outline-none"
+                />
+                <button
+                  onClick={handleSaveTitle}
+                  className="p-1.5 rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition cursor-pointer"
+                  title={isUz ? 'Saqlash' : 'Save'}
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                </button>
+                <button
+                  onClick={() => setIsEditingTitle(false)}
+                  className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 transition cursor-pointer"
+                  title={isUz ? 'Bekor qilish' : 'Cancel'}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2 group">
+                <h1
+                  onClick={() => {
+                    setEditedTitle(sheetData.metadata.name);
+                    setIsEditingTitle(true);
+                  }}
+                  className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight cursor-pointer hover:text-emerald-500 transition"
+                  title={isUz ? 'Nomni o‘zgartirish uchun bosing' : 'Click to rename'}
+                >
+                  {sheetData.metadata.name}
+                </h1>
+                <button
+                  onClick={() => {
+                    setEditedTitle(sheetData.metadata.name);
+                    setIsEditingTitle(true);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                  title={isUz ? 'Jadval nomini o‘zgartirish' : 'Rename spreadsheet'}
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             <span className="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
               {sheetData.metadata.selectedTab}
             </span>
           </div>
-          {sheetData.metadata.url && (
-            <a
-              href={sheetData.metadata.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center space-x-1 text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-mono"
-            >
-              <span>{isUz ? 'Google Sheetsda ochish' : 'Open in Google Sheets'}</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+            {sheetData.metadata.url && (
+              <a
+                href={sheetData.metadata.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 hover:underline font-mono"
+              >
+                <span>{isUz ? 'Google Sheetsda ochish' : 'Open in Google Sheets'}</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
+            {sheetData.metadata.lastModifiedBy && (
+              <>
+                <span>•</span>
+                <span className="inline-flex items-center space-x-1">
+                  <span>{isUz ? 'Oxirgi tahrirchi:' : 'Last modified by:'}</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">{sheetData.metadata.lastModifiedBy}</span>
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Global Sheet Actions */}

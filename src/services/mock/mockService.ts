@@ -111,17 +111,44 @@ function getInitialSampleAnalyses(): SavedAnalysis[] {
   ];
 }
 
+const STORAGE_DELETED_ANALYSES_KEY = 'sheetflow_deleted_analysis_ids';
+
+export function getDeletedAnalysisIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_DELETED_ANALYSES_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+}
+
+export function recordDeletedAnalysisId(id: string) {
+  try {
+    const current = getDeletedAnalysisIds();
+    current.add(id);
+    localStorage.setItem(STORAGE_DELETED_ANALYSES_KEY, JSON.stringify(Array.from(current)));
+  } catch {}
+}
+
+export function removeDeletedAnalysisId(id: string) {
+  try {
+    const current = getDeletedAnalysisIds();
+    current.delete(id);
+    localStorage.setItem(STORAGE_DELETED_ANALYSES_KEY, JSON.stringify(Array.from(current)));
+  } catch {}
+}
+
 function loadStoredAnalyses(): SavedAnalysis[] {
+  const deleted = getDeletedAnalysisIds();
   try {
     const raw = localStorage.getItem(STORAGE_SAVED_ANALYSES_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((a) => !deleted.has(a.id));
       }
     }
   } catch {}
-  const initial = getInitialSampleAnalyses();
+  const initial = getInitialSampleAnalyses().filter((a) => !deleted.has(a.id));
   saveStoredAnalyses(initial);
   return initial;
 }
@@ -174,6 +201,14 @@ export function recordDeletedSheetId(id: string) {
   try {
     const current = getDeletedSheetIds();
     current.add(id);
+    localStorage.setItem(STORAGE_DELETED_SHEETS_KEY, JSON.stringify(Array.from(current)));
+  } catch {}
+}
+
+export function removeDeletedSheetId(id: string) {
+  try {
+    const current = getDeletedSheetIds();
+    current.delete(id);
     localStorage.setItem(STORAGE_DELETED_SHEETS_KEY, JSON.stringify(Array.from(current)));
   } catch {}
 }
@@ -487,9 +522,41 @@ export class BrowserMockService {
     }));
   }
 
+  private getCurrentUserEmail(): string {
+    try {
+      const raw = localStorage.getItem('sheetflow_user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u?.email) return u.email;
+      }
+    } catch {}
+    return 'soxibjon@sheetflow.io';
+  }
+
   async getSheetById(id: string): Promise<SheetData> {
-    const s = this.sheets.find((sheet) => sheet.metadata.id === id);
-    if (!s) throw new Error('Sheet not found.');
+    let s = this.sheets.find((sheet) => sheet.metadata.id === id);
+    if (!s) {
+      // 1. Try reloading from localStorage
+      const stored = loadStoredSheets();
+      s = stored.find((sheet) => sheet.metadata.id === id);
+      if (s) {
+        this.sheets = stored;
+      }
+    }
+    if (!s && neonService.isConfigured()) {
+      // 2. Try loading from Neon DB
+      try {
+        const dbSheets = await neonService.loadSheets();
+        if (dbSheets) {
+          s = dbSheets.find((sheet) => sheet.metadata.id === id);
+          if (s) {
+            this.sheets.unshift(s);
+            saveStoredSheets(this.sheets);
+          }
+        }
+      } catch {}
+    }
+    if (!s) throw new Error(`Sheet with ID "${id}" not found.`);
 
     const repaired = this.repairGenericHeaders(s);
     if (repaired) {
@@ -504,6 +571,18 @@ export class BrowserMockService {
       headers: [...s.headers],
       rows: s.rows.map((r) => ({ ...r })),
     };
+  }
+
+  async updateSheetName(sheetId: string, newName: string): Promise<SheetData> {
+    const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
+    if (!sheet) throw new Error('Sheet not found.');
+    sheet.metadata.name = newName.trim();
+    sheet.metadata.lastModifiedBy = this.getCurrentUserEmail();
+    saveStoredSheets(this.sheets);
+    if (neonService.isConfigured()) {
+      neonService.updateSheetName(sheetId, newName.trim()).catch(console.error);
+    }
+    return sheet;
   }
 
   async deleteSheet(id: string): Promise<boolean> {
@@ -524,9 +603,14 @@ export class BrowserMockService {
   }
 
   async connectSheet(data: any): Promise<SheetData> {
+    const sheetId = data.id || `sheet_${Date.now()}`;
+    removeDeletedSheetId(sheetId);
+    if (data.id) removeDeletedSheetId(data.id);
+
+    const userEmail = this.getCurrentUserEmail();
     const newSheet: SheetData = {
       metadata: {
-        id: data.id || `sheet_${Date.now()}`,
+        id: sheetId,
         name: data.name || 'New Connected Sheet',
         url: data.url || '',
         sheetTabs: data.sheetTabs || ['Sheet1'],
@@ -535,15 +619,27 @@ export class BrowserMockService {
         columnCount: data.columns?.length || data.columnCount || 0,
         columns: data.columns || [],
         lastSyncedAt: new Date().toISOString(),
+        lastModifiedBy: userEmail,
         userRole: 'editor',
       },
       rows: data.rows || [],
       headers: data.columns?.map((c: any) => c.name) || [],
     };
-    this.sheets.unshift(newSheet);
+
+    const existingIdx = this.sheets.findIndex((s) => s.metadata.id === sheetId);
+    if (existingIdx >= 0) {
+      this.sheets[existingIdx] = newSheet;
+    } else {
+      this.sheets.unshift(newSheet);
+    }
+
     saveStoredSheets(this.sheets);
     if (neonService.isConfigured()) {
-      neonService.saveSheet(newSheet).catch(console.error);
+      try {
+        await neonService.saveSheet(newSheet);
+      } catch (err) {
+        console.error('Failed to save connected sheet to Neon:', err);
+      }
     }
     return newSheet;
   }
@@ -551,6 +647,7 @@ export class BrowserMockService {
   async addRow(sheetId: string, row: Record<string, any>): Promise<SheetRow> {
     const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
     if (!sheet) throw new Error('Sheet not found.');
+    const userEmail = this.getCurrentUserEmail();
     const maxRowIndex = sheet.rows.reduce((max, r) => Math.max(max, Number(r._rowIndex) || 0), 1);
     const newRow = { ...row, _rowIndex: maxRowIndex + 1, id: `row_${Date.now()}` };
     sheet.rows = [...sheet.rows, newRow];
@@ -558,6 +655,7 @@ export class BrowserMockService {
       ...sheet.metadata,
       rowCount: sheet.rows.length,
       lastSyncedAt: new Date().toISOString(),
+      lastModifiedBy: userEmail,
     };
     saveStoredSheets(this.sheets);
     if (neonService.isConfigured()) {
@@ -569,6 +667,7 @@ export class BrowserMockService {
   async updateRow(sheetId: string, rowIndex: number, row: Record<string, any>): Promise<SheetRow> {
     const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
     if (!sheet) throw new Error('Sheet not found.');
+    const userEmail = this.getCurrentUserEmail();
     const idx = sheet.rows.findIndex(
       (r, i) => r._rowIndex === rowIndex || r.id === rowIndex || i === rowIndex - 2 || i === rowIndex
     );
@@ -580,6 +679,7 @@ export class BrowserMockService {
       sheet.metadata = {
         ...sheet.metadata,
         lastSyncedAt: new Date().toISOString(),
+        lastModifiedBy: userEmail,
       };
       saveStoredSheets(this.sheets);
       if (neonService.isConfigured()) {
@@ -593,6 +693,7 @@ export class BrowserMockService {
   async deleteRow(sheetId: string, rowIndex: number): Promise<boolean> {
     const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
     if (!sheet) throw new Error('Sheet not found.');
+    const userEmail = this.getCurrentUserEmail();
     sheet.rows = sheet.rows.filter(
       (r, i) => r._rowIndex !== rowIndex && r.id !== rowIndex && i !== rowIndex - 2 && i !== rowIndex
     );
@@ -600,6 +701,7 @@ export class BrowserMockService {
       ...sheet.metadata,
       rowCount: sheet.rows.length,
       lastSyncedAt: new Date().toISOString(),
+      lastModifiedBy: userEmail,
     };
     saveStoredSheets(this.sheets);
     if (neonService.isConfigured()) {
@@ -664,7 +766,32 @@ export class BrowserMockService {
   }
 
   // ================= SAVED ANALYSES (SECTIONS 30 - 36) =================
+  private isHydratedAnalysesFromNeon = false;
+
   async getSavedAnalyses(): Promise<SavedAnalysis[]> {
+    const deleted = getDeletedAnalysisIds();
+    if (neonService.isConfigured() && !this.isHydratedAnalysesFromNeon) {
+      try {
+        const dbAnalyses = await neonService.loadSavedAnalyses();
+        if (dbAnalyses && dbAnalyses.length > 0) {
+          const filteredDb = dbAnalyses.filter((d: any) => !deleted.has(d.id));
+          const merged = [...filteredDb];
+          for (const local of this.savedAnalyses) {
+            if (!deleted.has(local.id) && !merged.some((m) => m.id === local.id)) {
+              merged.push(local);
+              neonService.saveAnalysis(local).catch(() => {});
+            }
+          }
+          this.savedAnalyses = merged;
+          saveStoredAnalyses(this.savedAnalyses);
+        }
+        this.isHydratedAnalysesFromNeon = true;
+      } catch (err) {
+        console.error('Failed to hydrate analyses from Neon:', err);
+      }
+    }
+
+    this.savedAnalyses = this.savedAnalyses.filter((a) => !deleted.has(a.id));
     return [...this.savedAnalyses].sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
@@ -679,7 +806,9 @@ export class BrowserMockService {
 
   async saveAnalysis(analysisData: Partial<SavedAnalysis>): Promise<SavedAnalysis> {
     const id = analysisData.id || `analysis_${Date.now()}`;
+    removeDeletedAnalysisId(id);
     const now = new Date().toISOString();
+    const userEmail = this.getCurrentUserEmail();
 
     const existingIdx = this.savedAnalyses.findIndex((a) => a.id === id);
     if (existingIdx >= 0) {
@@ -688,18 +817,23 @@ export class BrowserMockService {
         ...existing,
         ...analysisData,
         id,
+        authorEmail: analysisData.authorEmail || userEmail,
         updatedAt: now,
         history: [
           {
             timestamp: now,
             action: 'updated',
-            description: `Updated analysis configuration (${analysisData.name || existing.name})`,
+            description: `Updated analysis configuration (${analysisData.name || existing.name}) by ${userEmail}`,
+            authorEmail: userEmail,
           },
           ...(existing.history || []),
         ],
       } as SavedAnalysis;
       this.savedAnalyses[existingIdx] = updated;
       saveStoredAnalyses(this.savedAnalyses);
+      if (neonService.isConfigured()) {
+        neonService.saveAnalysis(updated).catch(console.error);
+      }
       this.trackAnalysisOpened(id);
       return updated;
     }
@@ -707,6 +841,7 @@ export class BrowserMockService {
     const newAnalysis: SavedAnalysis = {
       id,
       userId: 'user_default',
+      authorEmail: analysisData.authorEmail || userEmail,
       name: analysisData.name || 'Untitled Analysis',
       connectedSheetId: analysisData.connectedSheetId || '',
       sheetName: analysisData.sheetName || 'Connected Sheet',
@@ -726,13 +861,17 @@ export class BrowserMockService {
         {
           timestamp: now,
           action: 'created',
-          description: `Analysis created`,
+          description: `Analysis created by ${userEmail}`,
+          authorEmail: userEmail,
         },
       ],
     };
 
     this.savedAnalyses.unshift(newAnalysis);
     saveStoredAnalyses(this.savedAnalyses);
+    if (neonService.isConfigured()) {
+      neonService.saveAnalysis(newAnalysis).catch(console.error);
+    }
     this.trackAnalysisOpened(id);
     return newAnalysis;
   }
@@ -742,8 +881,16 @@ export class BrowserMockService {
   }
 
   async deleteAnalysis(id: string): Promise<boolean> {
+    recordDeletedAnalysisId(id);
     this.savedAnalyses = this.savedAnalyses.filter((a) => a.id !== id);
     saveStoredAnalyses(this.savedAnalyses);
+    if (neonService.isConfigured()) {
+      try {
+        await neonService.deleteAnalysis(id);
+      } catch (err) {
+        console.error('Failed to delete analysis from Neon:', err);
+      }
+    }
     return true;
   }
 
@@ -757,6 +904,7 @@ export class BrowserMockService {
     if (!sheet) throw new Error('Sheet not found.');
 
     const now = new Date().toISOString();
+    const userEmail = this.getCurrentUserEmail();
     sheet.rows = rows.map((r, i) => ({
       ...r,
       _rowIndex: r._rowIndex || i + 2,
@@ -769,6 +917,7 @@ export class BrowserMockService {
       sheet.headers = columns.map((c) => c.name);
     }
     sheet.metadata.lastSyncedAt = now;
+    sheet.metadata.lastModifiedBy = userEmail;
 
     saveStoredSheets(this.sheets);
     if (neonService.isConfigured()) {
@@ -796,6 +945,7 @@ export class BrowserMockService {
     const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
     if (!sheet) throw new Error('Sheet not found');
 
+    const userEmail = this.getCurrentUserEmail();
     const effectiveWebhook =
       payload.webhookUrl ||
       (typeof window !== 'undefined'
@@ -812,24 +962,30 @@ export class BrowserMockService {
           ),
         ];
 
+        // Send via text/plain to avoid CORS preflight rejection
         await fetch(effectiveWebhook, {
           method: 'POST',
           mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
             action: 'sync',
             spreadsheetId: sheetId,
             tabName: payload.tabName || sheet.metadata.selectedTab || 'Sheet1',
+            updatedBy: userEmail,
             values,
           }),
         });
 
         sheet.metadata.lastSyncedAt = new Date().toISOString();
+        sheet.metadata.lastModifiedBy = userEmail;
         saveStoredSheets(this.sheets);
+        if (neonService.isConfigured()) {
+          neonService.saveSheet(sheet).catch(console.error);
+        }
         return {
           synced: true,
           target: 'google_apps_script',
-          message: 'Google Sheets Apps Script orqali muvaffaqiyatli yangilandi!',
+          message: 'Google Sheets Apps Script orqali muvaffaqiyatli yangilandi va Neon bazasiga saqlandi!',
         };
       } catch (err: any) {
         console.warn('Apps Script sync error:', err);

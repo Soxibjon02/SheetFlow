@@ -18,6 +18,7 @@ export interface AnalysisConfig {
 export interface SavedAnalysis {
   id: string;
   userId?: string;
+  authorEmail?: string;
   name: string;
   connectedSheetId: string;
   sheetName: string;
@@ -35,5 +36,6 @@ export interface SavedAnalysis {
     timestamp: string;
     action: string;
     description: string;
+    authorEmail?: string;
   }[];
 }

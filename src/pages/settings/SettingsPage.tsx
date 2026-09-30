@@ -18,7 +18,7 @@ import {
 import { neonService } from '../../services/db/neonService';
 
 export const SettingsPage: React.FC = () => {
-  const { user, connectGoogle, disconnectGoogle } = useAuth();
+  const { user, connectGoogle, disconnectGoogle, updateProfile } = useAuth();
   const { theme, setTheme } = useTheme();
   const { lang, setLang, currency, setCurrency, dateFormat, setDateFormat, t } = useI18n();
 
@@ -68,6 +68,11 @@ export const SettingsPage: React.FC = () => {
   const [name, setName] = useState(user?.name || 'Soxibjon');
   const [email, setEmail] = useState(user?.email || 'soxibjon@sheetflow.io');
 
+  React.useEffect(() => {
+    if (user?.name) setName(user.name);
+    if (user?.email) setEmail(user.email);
+  }, [user]);
+
   // Password state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -80,7 +85,12 @@ export const SettingsPage: React.FC = () => {
 
   const handleUpdateProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    showNotice(lang === 'uz' ? 'Profil muvaffaqiyatli saqlandi.' : 'Profile updated successfully.');
+    if (!email.trim() || !email.includes('@')) {
+      alert(lang === 'uz' ? 'Iltimos, to‘g‘ri elektron pochta manzilini kiriting.' : 'Please enter a valid email address.');
+      return;
+    }
+    updateProfile({ name: name.trim(), email: email.trim() });
+    showNotice(lang === 'uz' ? '✓ Profil va email muvaffaqiyatli yangilandi.' : '✓ Profile and email updated successfully.');
   };
 
   const handleChangePassword = (e: React.FormEvent) => {

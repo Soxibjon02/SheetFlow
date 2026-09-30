@@ -18,6 +18,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   connectGoogle: () => void;
   disconnectGoogle: () => void;
+  updateProfile: (updates: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -29,6 +30,7 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
   connectGoogle: () => {},
   disconnectGoogle: () => {},
+  updateProfile: () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -100,6 +102,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateProfile = (updates: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, ...updates };
+      localStorage.setItem('sheetflow_user', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -111,6 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         connectGoogle,
         disconnectGoogle,
+        updateProfile,
       }}
     >
       {children}
