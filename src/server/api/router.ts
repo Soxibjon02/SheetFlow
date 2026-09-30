@@ -2,7 +2,7 @@ import { ApiResponse, successResponse, errorResponse } from './types';
 import { calculate } from '../../core/calculations/engine';
 import { analyzeSheet } from '../../core/analyzer/dataAnalyzer';
 import { generateDashboard } from '../../core/dashboard-generator/dashboardGenerator';
-import { extractSpreadsheetId, fetchPublicSpreadsheetPreview } from '../services/googleSheets';
+import { extractSpreadsheetId, fetchPublicSpreadsheetPreview, syncAllRowsToGoogleSheet } from '../services/googleSheets';
 import { hashPassword, verifyPassword, createSessionToken, verifySessionToken } from '../security/auth';
 import { getInitialSampleSheets } from '../../core/sample-data';
 import { SheetData, SheetRow } from '../../core/types/sheet';
@@ -216,6 +216,92 @@ export async function handleApiRequest(
       if (subPath === '/refresh' && method === 'POST') {
         sheet.metadata.lastSyncedAt = new Date().toISOString();
         return { status: 200, body: successResponse(sheet) };
+      }
+
+      // Sync all changes (including deleted rows) to Google Sheet: POST /api/sheets/:id/sync-google
+      if (subPath === '/sync-google' && method === 'POST') {
+        const { tabName, headers: reqHeaders, rows: reqRows, webhookUrl } = body || {};
+        const spreadsheetId = sheet.metadata.url ? extractSpreadsheetId(sheet.metadata.url) || id : id;
+
+        // 1. Google Apps Script Webhook
+        if (webhookUrl && webhookUrl.startsWith('http')) {
+          try {
+            const values = [
+              reqHeaders || sheet.headers,
+              ...(reqRows || sheet.rows).map((row: any) =>
+                (reqHeaders || sheet.headers).map((h: string) => (row[h] !== undefined && row[h] !== null ? row[h] : ''))
+              ),
+            ];
+            const resp = await fetch(webhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'sync',
+                spreadsheetId,
+                tabName: tabName || sheet.metadata.selectedTab || 'Sheet1',
+                values,
+              }),
+            });
+            if (resp.ok) {
+              sheet.metadata.lastSyncedAt = new Date().toISOString();
+              return {
+                status: 200,
+                body: successResponse({
+                  synced: true,
+                  target: 'google_apps_script',
+                  message: 'Google Sheets Apps Script orqali muvaffaqiyatli yangilandi.',
+                }),
+              };
+            }
+          } catch (webhookErr: any) {
+            console.warn('Webhook sync failed:', webhookErr);
+          }
+        }
+
+        // 2. Google Sheets API with OAuth
+        const authHeader = headers?.['authorization'] || '';
+        const accessToken = authHeader.replace(/^Bearer\s+/i, '') || body?.accessToken;
+
+        if (accessToken && accessToken !== 'null' && !accessToken.startsWith('tok_')) {
+          try {
+            const result = await syncAllRowsToGoogleSheet(
+              accessToken,
+              spreadsheetId,
+              tabName || sheet.metadata.selectedTab || 'Sheet1',
+              reqHeaders || sheet.headers,
+              reqRows || sheet.rows
+            );
+            sheet.metadata.lastSyncedAt = new Date().toISOString();
+            return {
+              status: 200,
+              body: successResponse({
+                synced: true,
+                target: 'google_api',
+                result,
+                message: 'Google Sheets API orqali muvaffaqiyatli saqlandi.',
+              }),
+            };
+          } catch (apiErr: any) {
+            return {
+              status: 400,
+              body: errorResponse(
+                'GOOGLE_SYNC_FAILED',
+                `Google Sheets API bilan saqlab bo‘lmadi: ${apiErr.message || 'Ruxsat xatosi'}`
+              ),
+            };
+          }
+        }
+
+        // 3. Fallback when credentials aren't present
+        return {
+          status: 200,
+          body: successResponse({
+            synced: false,
+            target: 'local_database',
+            message:
+              'O‘zgarishlar SheetFlow va Neon bazasiga to‘liq saqlandi. Google Sheets-ga to‘g‘ridan-to‘g‘ri yozish uchun Google hisobiga tahrirchi (Editor) ruxsati yoki Google Apps Script Webhook havolasi kerak.',
+          }),
+        };
       }
     }
 

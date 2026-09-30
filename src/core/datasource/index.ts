@@ -122,6 +122,137 @@ export interface IDataSource {
   deleteRow(rowIndex: number, sheetTab?: string): Promise<boolean>;
 }
 
+export interface HeaderDetectionResult {
+  headerRowIndex: number;
+  headers: string[];
+  dataRows: any[][];
+  titleBanner?: string;
+}
+
+/**
+ * Intelligently detects the true header row in a spreadsheet grid.
+ * Skips empty rows, merged title banners (e.g. single cell title banners),
+ * and finds the row with the best header density of text labels.
+ */
+export function detectHeaderRow(rawGrid: any[][]): HeaderDetectionResult {
+  if (!rawGrid || rawGrid.length === 0) {
+    return { headerRowIndex: 0, headers: [], dataRows: [] };
+  }
+
+  // Calculate the maximum number of columns found in the top 15 rows
+  const scanLimit = Math.min(15, rawGrid.length);
+  let maxCols = 1;
+  for (let i = 0; i < scanLimit; i++) {
+    if (rawGrid[i] && rawGrid[i].length > maxCols) {
+      maxCols = rawGrid[i].length;
+    }
+  }
+
+  let bestIndex = 0;
+  let bestScore = -Infinity;
+  let detectedTitle: string | undefined = undefined;
+
+  // We scan candidate rows from row 0 to row min(6, rawGrid.length - 1)
+  const candidateLimit = Math.min(6, rawGrid.length);
+
+  for (let r = 0; r < candidateLimit; r++) {
+    const row = rawGrid[r] || [];
+    const nonEmptyCells = row
+      .map((c, i) => ({ val: c !== null && c !== undefined ? String(c).trim() : '', colIdx: i }))
+      .filter((item) => item.val.length > 0);
+
+    const nonEmptyCount = nonEmptyCells.length;
+
+    // Completely empty row -> skip
+    if (nonEmptyCount === 0) {
+      continue;
+    }
+
+    // Single non-empty cell in a table with 3 or more columns is a title/banner row
+    if (nonEmptyCount === 1 && maxCols >= 3) {
+      if (!detectedTitle) {
+        detectedTitle = nonEmptyCells[0].val;
+      }
+      continue;
+    }
+
+    // Count cells that are non-numeric text strings (typical column headers)
+    const textCells = nonEmptyCells.filter((item) => {
+      const val = item.val;
+      const cleanNum = val.replace(/[\$,€,UZS,\s,%]/g, '');
+      const isNum = cleanNum.length > 0 && !isNaN(Number(cleanNum));
+      const isDate =
+        /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(val) ||
+        /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(val);
+      return !isNum && !isDate;
+    });
+
+    let score = nonEmptyCount * 12;
+    score += textCells.length * 8;
+
+    // Bonus for covering majority of columns
+    if (nonEmptyCount >= Math.floor(maxCols * 0.5)) {
+      score += 50;
+    }
+    // High bonus if most non-empty cells are text
+    if (nonEmptyCount > 0 && textCells.length / nonEmptyCount >= 0.7) {
+      score += 40;
+    }
+
+    // Small penalty for later rows
+    score -= r * 3;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = r;
+    }
+  }
+
+  // If the best row is after row 0 and title wasn't found, check earlier rows
+  if (bestIndex > 0 && !detectedTitle) {
+    for (let r = 0; r < bestIndex; r++) {
+      const row = rawGrid[r] || [];
+      const cells = row.filter((c) => c !== null && c !== undefined && String(c).trim().length > 0);
+      if (cells.length > 0 && cells.length <= 3) {
+        detectedTitle = cells.map((c) => String(c).trim()).join(' — ');
+        break;
+      }
+    }
+  }
+
+  // Extract raw header row
+  const headerRow = rawGrid[bestIndex] || [];
+  const rawHeaders: string[] = [];
+  const usedNames = new Set<string>();
+
+  // Determine actual column count (at least headerRow.length or maxCols)
+  const effectiveColCount = Math.max(headerRow.length, maxCols);
+
+  for (let c = 0; c < effectiveColCount; c++) {
+    let name = headerRow[c] !== null && headerRow[c] !== undefined ? String(headerRow[c]).trim() : '';
+    if (!name) {
+      name = `Ustun_${c + 1}`;
+    }
+    let uniqueName = name;
+    let counter = 2;
+    while (usedNames.has(uniqueName.toLowerCase())) {
+      uniqueName = `${name}_${counter}`;
+      counter++;
+    }
+    usedNames.add(uniqueName.toLowerCase());
+    rawHeaders.push(uniqueName);
+  }
+
+  const dataRows = rawGrid.slice(bestIndex + 1);
+
+  return {
+    headerRowIndex: bestIndex,
+    headers: rawHeaders,
+    dataRows,
+    titleBanner: detectedTitle,
+  };
+}
+
 /**
  * Normalizes 2D array of rows (first row is header) into SheetData with detected types.
  */
@@ -150,8 +281,19 @@ export function normalizeRawGrid(
     };
   }
 
-  const rawHeaders = rawGrid[0].map((h, i) => (h ? String(h).trim() : `Column_${i + 1}`));
-  const rawRows = rawGrid.slice(1);
+  const { headerRowIndex, headers: rawHeaders, dataRows: rawRows, titleBanner } = detectHeaderRow(rawGrid);
+
+  // If detectedTitle is present and given name is generic, adopt the detected title
+  let finalName = name;
+  const isGenericName =
+    !name ||
+    name.startsWith('Google Sheet (') ||
+    name.startsWith('Spreadsheet ') ||
+    name === 'New Connected Sheet' ||
+    name === 'Imported Custom Dataset';
+  if (titleBanner && isGenericName) {
+    finalName = titleBanner;
+  }
 
   // Detect column definitions
   const columns: ColumnDefinition[] = rawHeaders.map((header, colIndex) => {
@@ -161,7 +303,7 @@ export function normalizeRawGrid(
 
   // Construct normalized objects
   const rows: SheetRow[] = rawRows.map((rawRow, rowIdx) => {
-    const rowObj: SheetRow = { _rowIndex: rowIdx + 2 }; // Spreadsheet row (1-indexed + header)
+    const rowObj: SheetRow = { _rowIndex: rowIdx + headerRowIndex + 2 }; // Spreadsheet row (1-indexed)
     columns.forEach((col, cIdx) => {
       const rawCell = rawRow ? rawRow[cIdx] : null;
       rowObj[col.name] = parseCellValue(rawCell, col.detectedType);
@@ -172,7 +314,7 @@ export function normalizeRawGrid(
   return {
     metadata: {
       id: sheetId,
-      name,
+      name: finalName,
       url,
       sheetTabs: [tabName],
       selectedTab: tabName,

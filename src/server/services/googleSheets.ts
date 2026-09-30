@@ -185,3 +185,48 @@ function parseSimpleCsv(text: string): any[][] {
     return row;
   });
 }
+
+/**
+ * Overwrites all values in a Google Sheet tab with the provided headers and rows.
+ * Clears old data first so deleted rows/columns are fully removed.
+ */
+export async function syncAllRowsToGoogleSheet(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+  headers: string[],
+  rows: Record<string, any>[]
+) {
+  const sheets = await getAuthorizedSheetsClient(accessToken);
+  const targetTab = tabName || 'Sheet1';
+
+  // Format 2D array: row 0 is headers, subsequent rows are cell values
+  const values: any[][] = [
+    headers,
+    ...rows.map((row) =>
+      headers.map((h) => (row[h] !== undefined && row[h] !== null ? row[h] : ''))
+    ),
+  ];
+
+  // 1. Clear existing range to eliminate deleted rows/columns
+  try {
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${targetTab}!A:ZZ`,
+    });
+  } catch (clearErr) {
+    console.warn('Could not clear range before overwrite:', clearErr);
+  }
+
+  // 2. Update all cells from A1
+  const response = await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${targetTab}!A1`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: {
+      values,
+    },
+  });
+
+  return response.data;
+}

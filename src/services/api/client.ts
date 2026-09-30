@@ -143,6 +143,20 @@ class SheetFlowApiClient {
     return mockService.saveSheetChanges(sheetId, rows, columns);
   }
 
+  // Google Sheets sync
+  async syncGoogleSheet(
+    sheetId: string,
+    payload: {
+      tabName?: string;
+      headers: string[];
+      rows: Record<string, any>[];
+      webhookUrl?: string;
+      accessToken?: string;
+    }
+  ): Promise<{ synced: boolean; message: string; target: string }> {
+    return mockService.syncGoogleSheet(sheetId, payload);
+  }
+
   // Recent tracking methods
   trackSheetOpened(sheetId: string) {
     mockService.trackSheetOpened(sheetId);

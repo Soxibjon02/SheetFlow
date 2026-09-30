@@ -26,7 +26,10 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   RefreshCw,
+  Database,
+  Table,
 } from 'lucide-react';
+import { api } from '../../services/api/client';
 import { useI18n } from '../../lib/i18n';
 import {
   checkDataQuality,
@@ -167,17 +170,19 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [historyIndex, history]);
 
-  // Compute Unsaved Changes (Section 15)
+  // Compute Unsaved Changes (Section 15 - including deleted rows, renamed columns)
   const unsavedDiff = useMemo(() => {
     let cellsChanged = 0;
-    let newRowsCount = Math.max(0, localRows.length - savedSnapshot.rows.length);
-    let newColsCount = Math.max(0, localColumns.length - savedSnapshot.columns.length);
+    const newRowsCount = Math.max(0, localRows.length - savedSnapshot.rows.length);
+    const deletedRowsCount = Math.max(0, savedSnapshot.rows.length - localRows.length);
+    const newColsCount = Math.max(0, localColumns.length - savedSnapshot.columns.length);
+    const deletedColsCount = Math.max(0, savedSnapshot.columns.length - localColumns.length);
 
     const minRows = Math.min(localRows.length, savedSnapshot.rows.length);
     for (let i = 0; i < minRows; i++) {
       const cur = localRows[i];
       const orig = savedSnapshot.rows[i];
-      if (orig) {
+      if (orig && cur) {
         for (const col of savedSnapshot.columns) {
           if (cur[col.name] !== orig[col.name]) {
             cellsChanged++;
@@ -186,12 +191,29 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       }
     }
 
-    const hasUnsaved = cellsChanged > 0 || newRowsCount > 0 || newColsCount > 0;
+    const colsRenamed = localColumns.some((col, idx) => {
+      const origCol = savedSnapshot.columns[idx];
+      return origCol && origCol.name !== col.name;
+    });
+
+    const hasUnsaved =
+      cellsChanged > 0 ||
+      newRowsCount > 0 ||
+      deletedRowsCount > 0 ||
+      newColsCount > 0 ||
+      deletedColsCount > 0 ||
+      colsRenamed ||
+      localRows.length !== savedSnapshot.rows.length ||
+      localColumns.length !== savedSnapshot.columns.length;
+
     return {
       hasUnsaved,
       cellsChanged,
       newRowsCount,
+      deletedRowsCount,
       newColsCount,
+      deletedColsCount,
+      colsRenamed,
     };
   }, [localRows, localColumns, savedSnapshot]);
 
@@ -210,13 +232,27 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   const [newColName, setNewColName] = useState('');
   const [newColType, setNewColType] = useState<DetectedType>('text');
   const [editingRow, setEditingRow] = useState<Record<string, any> | null>(null);
+  const [deletingRow, setDeletingRow] = useState<Record<string, any> | null>(null);
   const [deletingRowIndex, setDeletingRowIndex] = useState<number | null>(null);
+  const [renamingCol, setRenamingCol] = useState<{ oldName: string; newName: string } | null>(null);
 
   // Save to Google Sheet Modal state (Section 16)
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isSavingGoogleSheet, setIsSavingGoogleSheet] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return (
+        localStorage.getItem(`sheetflow_webhook_${sheetData.metadata.id}`) ||
+        localStorage.getItem('sheetflow_global_webhook') ||
+        ''
+      );
+    }
+    return '';
+  });
+  const [isAppsScriptGuideOpen, setIsAppsScriptGuideOpen] = useState(false);
+  const [copiedScript, setCopiedScript] = useState(false);
 
   // Clean Data Modal state (Section 11)
   const [isCleanModalOpen, setIsCleanModalOpen] = useState(false);
@@ -384,10 +420,76 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
 
   // 4. Delete Row Handler (Local-First)
   const handleConfirmDeleteRow = () => {
-    if (deletingRowIndex === null) return;
-    const updated = localRows.filter((r) => r._rowIndex !== deletingRowIndex && r.id !== deletingRowIndex);
+    if (!deletingRow && deletingRowIndex === null) return;
+    const targetIdx = deletingRow?._rowIndex || deletingRowIndex;
+    const updated = localRows.filter((r) => {
+      if (deletingRow && r === deletingRow) return false;
+      if (targetIdx !== null && (r._rowIndex === targetIdx || r.id === targetIdx)) return false;
+      return true;
+    });
     pushState(updated, localColumns);
+    setDeletingRow(null);
     setDeletingRowIndex(null);
+  };
+
+  // Promote Row 1 to Headers
+  const handlePromoteRowToHeaders = () => {
+    if (localRows.length === 0) return;
+    const firstRow = localRows[0];
+    const newCols: ColumnDefinition[] = localColumns.map((col) => {
+      const rawVal = firstRow[col.name];
+      const name =
+        rawVal !== null && rawVal !== undefined && String(rawVal).trim().length > 0
+          ? String(rawVal).trim()
+          : col.name;
+      return {
+        ...col,
+        name,
+        displayName: name,
+      };
+    });
+
+    const remainingRows = localRows.slice(1);
+    const updatedRows = remainingRows.map((row, rIdx) => {
+      const newRow: SheetRow = { _rowIndex: rIdx + 2 };
+      localColumns.forEach((col, idx) => {
+        newRow[newCols[idx].name] = row[col.name];
+      });
+      return newRow;
+    });
+
+    pushState(updatedRows, newCols);
+    setSaveSuccessMessage(
+      isUz
+        ? '✓ 1-qator ustun nomlari sifatida o‘rnatildi!'
+        : '✓ Row 1 promoted to column headers!'
+    );
+    setTimeout(() => setSaveSuccessMessage(null), 4000);
+  };
+
+  // Rename Column Handler
+  const handleConfirmRenameCol = () => {
+    if (!renamingCol || !renamingCol.newName.trim()) return;
+    const { oldName, newName } = renamingCol;
+    const trimmedNew = newName.trim();
+    if (oldName === trimmedNew) {
+      setRenamingCol(null);
+      return;
+    }
+
+    const updatedCols = localColumns.map((c) =>
+      c.name === oldName ? { ...c, name: trimmedNew, displayName: trimmedNew } : c
+    );
+
+    const updatedRows = localRows.map((r) => {
+      const copy = { ...r };
+      copy[trimmedNew] = copy[oldName];
+      delete copy[oldName];
+      return copy;
+    });
+
+    pushState(updatedRows, updatedCols);
+    setRenamingCol(null);
   };
 
   // 5. Column Type Override (Local-First)
@@ -426,20 +528,40 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       if (onSaveToGoogleSheet) {
         await onSaveToGoogleSheet(localRows, localColumns);
       }
+
+      // Live sync to Google Sheets (via Webhook or API)
+      const syncResult = await api.syncGoogleSheet(sheetData.metadata.id, {
+        tabName: sheetData.metadata.selectedTab,
+        headers: localColumns.map((c) => c.name),
+        rows: localRows,
+        webhookUrl: webhookUrl || undefined,
+      });
+
       setSavedSnapshot({
         rows: localRows.map((r) => ({ ...r })),
         columns: [...localColumns],
       });
       setIsSaveModalOpen(false);
-      setSaveSuccessMessage(
-        isUz ? '✓ Google Sheets bilan saqlandi' : '✓ Successfully saved to Google Sheet'
-      );
-      setTimeout(() => setSaveSuccessMessage(null), 4000);
+
+      if (syncResult.synced) {
+        setSaveSuccessMessage(
+          isUz
+            ? '✓ Barcha o‘zgarishlar Google Sheets va Neon bazasiga yuklandi!'
+            : '✓ All changes successfully synced to Google Sheets and Neon DB!'
+        );
+      } else {
+        setSaveSuccessMessage(
+          isUz
+            ? '✓ O‘zgarishlar Neon Postgres bazasiga to‘liq saqlandi!'
+            : '✓ Changes saved to Neon Postgres database!'
+        );
+      }
+      setTimeout(() => setSaveSuccessMessage(null), 5000);
     } catch (err: any) {
       setSaveErrorMessage(
         isUz
-          ? 'Saqlashda xatolik yuz berdi. Mahalliy o‘zgarishlaringiz saqlanib qolgan.'
-          : 'Save failed. Your local changes are still preserved. Make sure you have Editor access.'
+          ? `Saqlashda xatolik: ${err.message || 'Xatolik yuz berdi'}`
+          : `Save failed: ${err.message || 'An error occurred'}`
       );
     } finally {
       setIsSavingGoogleSheet(false);
@@ -484,8 +606,14 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                   (isUz ? `${unsavedDiff.cellsChanged} ta katak o‘zgardi` : `${unsavedDiff.cellsChanged} cells changed`),
                 unsavedDiff.newRowsCount > 0 &&
                   (isUz ? `${unsavedDiff.newRowsCount} yangi qator` : `${unsavedDiff.newRowsCount} new rows`),
+                unsavedDiff.deletedRowsCount > 0 &&
+                  (isUz ? `${unsavedDiff.deletedRowsCount} ta qator o‘chirildi` : `${unsavedDiff.deletedRowsCount} rows deleted`),
                 unsavedDiff.newColsCount > 0 &&
                   (isUz ? `${unsavedDiff.newColsCount} yangi ustun` : `${unsavedDiff.newColsCount} new columns`),
+                unsavedDiff.deletedColsCount > 0 &&
+                  (isUz ? `${unsavedDiff.deletedColsCount} ustun o‘chirildi` : `${unsavedDiff.deletedColsCount} columns deleted`),
+                unsavedDiff.colsRenamed &&
+                  (isUz ? `Ustun nomlari o‘zgartirildi` : `Column headers renamed`),
               ]
                 .filter(Boolean)
                 .join(' • ')}
@@ -501,6 +629,27 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
               <span>{isUz ? 'Google Sheets-ga saqlash' : 'Save to Google Sheet'}</span>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* GENERIC HEADERS DETECTED SMART BANNER */}
+      {localColumns.some((c) => /^Column_\d+$/i.test(c.name)) && localRows.length > 0 && (
+        <div className="bg-sky-500/10 border-b border-sky-500/20 px-4 py-2.5 flex items-center justify-between text-xs text-sky-800 dark:text-sky-300">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-sky-500 shrink-0" />
+            <span>
+              {isUz
+                ? 'Jadval ustunlari Column_1, Column_2 deb ko‘rinmoqda. 1-qatorni haqiqiy ustun nomlari sifatida o‘rnatishni xohlaysizmi?'
+                : 'Generic Column_X headers detected. Would you like to promote Row 1 as the true column headers?'}
+            </span>
+          </div>
+          <button
+            onClick={handlePromoteRowToHeaders}
+            className="flex items-center space-x-1.5 px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white font-semibold rounded-lg shadow-sm transition cursor-pointer shrink-0 ml-3"
+          >
+            <Table className="w-3.5 h-3.5" />
+            <span>{isUz ? '1-qatorni ustun nomlari qilish' : 'Promote Row 1 to Headers'}</span>
+          </button>
         </div>
       )}
 
@@ -592,6 +741,18 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
             <Plus className="w-3.5 h-3.5" />
             <span>{isUz ? '+ Ustun' : '+ Add Column'}</span>
           </button>
+
+          {/* Promote Row 1 to Headers Toolbar Button */}
+          {localRows.length > 0 && (
+            <button
+              onClick={handlePromoteRowToHeaders}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-medium text-xs border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+              title={isUz ? '1-qatorni ustun nomlari sifatida o‘rnatish' : 'Promote Row 1 as Column Headers'}
+            >
+              <Table className="w-3.5 h-3.5 text-sky-500" />
+              <span>{isUz ? 'Sarlavha qilish' : 'Promote Header'}</span>
+            </button>
+          )}
 
           {/* Download CSV / Excel (Section 43) */}
           <button
@@ -692,18 +853,31 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                     className="py-3 px-4 font-semibold text-slate-700 dark:text-slate-200 border-r border-slate-200 dark:border-slate-800/60 min-w-[160px] select-none hover:bg-slate-200/50 dark:hover:bg-slate-900/60 transition"
                   >
                     <div className="flex items-center justify-between group">
-                      <div
-                        className="flex items-center space-x-2 cursor-pointer"
-                        onClick={() => handleSort(col.name)}
-                      >
-                        <span className="font-medium text-slate-900 dark:text-slate-100">{col.name}</span>
-                        <ArrowUpDown
-                          className={`w-3.5 h-3.5 transition-colors ${
-                            sortColumn === col.name
-                              ? 'text-emerald-500 dark:text-emerald-400'
-                              : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
-                          }`}
-                        />
+                      <div className="flex items-center space-x-1.5">
+                        <div
+                          className="flex items-center space-x-1.5 cursor-pointer"
+                          onClick={() => handleSort(col.name)}
+                        >
+                          <span className="font-medium text-slate-900 dark:text-slate-100">{col.name}</span>
+                          <ArrowUpDown
+                            className={`w-3.5 h-3.5 transition-colors ${
+                              sortColumn === col.name
+                                ? 'text-emerald-500 dark:text-emerald-400'
+                                : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+                            }`}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenamingCol({ oldName: col.name, newName: col.name });
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-400 hover:text-emerald-500 transition cursor-pointer"
+                          title={isUz ? 'Ustun nomini o‘zgartirish' : 'Rename column'}
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
                       </div>
 
                       {/* Type Badge & Override dropdown */}
@@ -815,7 +989,10 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => setDeletingRowIndex(row._rowIndex || rIdx + 1)}
+                        onClick={() => {
+                          setDeletingRow(row);
+                          setDeletingRowIndex(row._rowIndex || rIdx + 1);
+                        }}
                         className="p-1 rounded text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
                         title={isUz ? 'Oʻchirish' : 'Delete Row'}
                       >
@@ -1068,7 +1245,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       )}
 
       {/* ================= MODAL: DELETE CONFIRMATION ================= */}
-      {deletingRowIndex !== null && (
+      {(deletingRowIndex !== null || deletingRow !== null) && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
@@ -1076,13 +1253,16 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {isUz
-                ? `Qator #${deletingRowIndex} jadvaldan o‘chiriladi. O‘zgarishlar mahalliy qo‘llanadi.`
-                : `Row #${deletingRowIndex} will be removed locally.`}
+                ? `Qator #${deletingRow?._rowIndex || deletingRowIndex} jadvaldan o‘chiriladi. Bu o‘zgarish Google Sheets va Neon bazasiga yuklanadi.`
+                : `Row #${deletingRow?._rowIndex || deletingRowIndex} will be removed from spreadsheet.`}
             </p>
             <div className="flex items-center justify-end space-x-3 pt-3">
               <button
                 type="button"
-                onClick={() => setDeletingRowIndex(null)}
+                onClick={() => {
+                  setDeletingRow(null);
+                  setDeletingRowIndex(null);
+                }}
                 className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
               >
                 {isUz ? 'Bekor qilish' : 'Cancel'}
@@ -1099,10 +1279,53 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
         </div>
       )}
 
+      {/* ================= MODAL: RENAME COLUMN ================= */}
+      {renamingCol !== null && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {isUz ? 'Ustun nomini o‘zgartirish' : 'Rename Column'}
+            </h3>
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-500 dark:text-slate-400">
+                {isUz ? 'Yangi ustun nomi:' : 'New column name:'}
+              </label>
+              <input
+                type="text"
+                autoFocus
+                value={renamingCol.newName}
+                onChange={(e) => setRenamingCol({ ...renamingCol, newName: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleConfirmRenameCol();
+                  if (e.key === 'Escape') setRenamingCol(null);
+                }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+              />
+            </div>
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setRenamingCol(null)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                {isUz ? 'Bekor qilish' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRenameCol}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm shadow-lg shadow-emerald-600/20 transition cursor-pointer"
+              >
+                {isUz ? 'Saqlash' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ================= MODAL: SAVE TO GOOGLE SHEET (Section 16) ================= */}
       {isSaveModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center space-x-2">
                 <CloudUpload className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
@@ -1118,7 +1341,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
 
             <div className="space-y-3">
               <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                {isUz ? 'Saqlanadigan o‘zgarishlar:' : 'Changes to be saved:'}
+                {isUz ? 'Saqlanadigan barcha o‘zgarishlar:' : 'Changes to be saved:'}
               </p>
 
               <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3.5 space-y-2 text-xs">
@@ -1142,6 +1365,16 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                     </span>
                   </div>
                 )}
+                {unsavedDiff.deletedRowsCount > 0 && (
+                  <div className="flex items-center space-x-2 text-rose-600 dark:text-rose-400 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                    <span>
+                      {isUz
+                        ? `${unsavedDiff.deletedRowsCount} ta qator o‘chirildi`
+                        : `${unsavedDiff.deletedRowsCount} row${unsavedDiff.deletedRowsCount > 1 ? 's' : ''} deleted`}
+                    </span>
+                  </div>
+                )}
                 {unsavedDiff.newColsCount > 0 && (
                   <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
@@ -1152,11 +1385,120 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                     </span>
                   </div>
                 )}
+                {unsavedDiff.deletedColsCount > 0 && (
+                  <div className="flex items-center space-x-2 text-rose-600 dark:text-rose-400 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                    <span>
+                      {isUz
+                        ? `${unsavedDiff.deletedColsCount} ta ustun o‘chirildi`
+                        : `${unsavedDiff.deletedColsCount} column${unsavedDiff.deletedColsCount > 1 ? 's' : ''} deleted`}
+                    </span>
+                  </div>
+                )}
+                {unsavedDiff.colsRenamed && (
+                  <div className="flex items-center space-x-2 text-sky-600 dark:text-sky-400 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                    <span>{isUz ? 'Ustun nomlari yangilandi' : 'Column headers renamed'}</span>
+                  </div>
+                )}
                 {!unsavedDiff.hasUnsaved && (
                   <p className="text-slate-500 dark:text-slate-400">
                     {isUz ? 'Hech qanday o‘zgarish kiritilmadi.' : 'No pending changes detected.'}
                   </p>
                 )}
+              </div>
+
+              {/* Destination & Sync Configuration */}
+              <div className="pt-2 space-y-2">
+                <div className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300">
+                  <div className="flex items-center space-x-2">
+                    <Database className="w-4 h-4 text-emerald-500" />
+                    <span className="font-semibold">Neon PostgreSQL:</span>
+                  </div>
+                  <span className="text-[11px] font-bold">✓ Faol (Doim saqlanadi)</span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        Google Sheets Live Sync:
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAppsScriptGuideOpen(!isAppsScriptGuideOpen)}
+                      className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                    >
+                      {isAppsScriptGuideOpen
+                        ? isUz ? 'Yopish' : 'Close'
+                        : isUz ? '1-daqiqada avtomatik sozlash' : '1-minute auto-sync setup'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 pt-1">
+                    <label className="text-[11px] text-slate-600 dark:text-slate-400">
+                      {isUz
+                        ? 'Google Apps Script Webhook havolasi (Google Sheets-ga to‘g‘ridan-to‘g‘ri yozish uchun):'
+                        : 'Google Apps Script Webhook URL (For direct write to Google Sheet):'}
+                    </label>
+                    <input
+                      type="url"
+                      value={webhookUrl}
+                      onChange={(e) => {
+                        setWebhookUrl(e.target.value);
+                        localStorage.setItem(`sheetflow_webhook_${sheetData.metadata.id}`, e.target.value);
+                        localStorage.setItem('sheetflow_global_webhook', e.target.value);
+                      }}
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                    />
+                  </div>
+
+                  {isAppsScriptGuideOpen && (
+                    <div className="p-3 rounded-lg bg-slate-100 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 space-y-2 text-[11px] text-slate-600 dark:text-slate-300">
+                      <p className="font-semibold text-slate-900 dark:text-white">
+                        {isUz ? 'Google Sheets-ga to‘g‘ridan-to‘g‘ri yozish kodi:' : 'Google Sheets direct write script:'}
+                      </p>
+                      <p className="text-[11px]">
+                        {isUz
+                          ? '1. Google Sheets -> Extensions -> Apps Script bo‘limiga kiring va quyidagi kodni qo‘ying:'
+                          : '1. In Google Sheets, go to Extensions -> Apps Script and paste:'}
+                      </p>
+                      <div className="relative">
+                        <pre className="p-2.5 rounded bg-slate-950 text-emerald-400 font-mono text-[10px] overflow-x-auto">
+{`function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = data.tabName ? ss.getSheetByName(data.tabName) : ss.getActiveSheet();
+  sheet.clearContents();
+  if (data.values && data.values.length > 0) {
+    sheet.getRange(1, 1, data.values.length, data.values[0].length).setValues(data.values);
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: "success" })).setMimeType(ContentService.MimeType.JSON);
+}`}
+                        </pre>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`function doPost(e) {\n  var data = JSON.parse(e.postData.contents);\n  var ss = SpreadsheetApp.getActiveSpreadsheet();\n  var sheet = data.tabName ? ss.getSheetByName(data.tabName) : ss.getActiveSheet();\n  sheet.clearContents();\n  if (data.values && data.values.length > 0) {\n    sheet.getRange(1, 1, data.values.length, data.values[0].length).setValues(data.values);\n  }\n  return ContentService.createTextOutput(JSON.stringify({ status: "success" })).setMimeType(ContentService.MimeType.JSON);\n}`);
+                            setCopiedScript(true);
+                            setTimeout(() => setCopiedScript(false), 3000);
+                          }}
+                          className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-semibold"
+                        >
+                          {copiedScript ? (isUz ? 'Nusxalandi!' : 'Copied!') : (isUz ? 'Nusxalash' : 'Copy')}
+                        </button>
+                      </div>
+                      <p className="text-[11px]">
+                        {isUz
+                          ? '2. Deploy -> New Deployment -> Web App (Execute as: Me, Who has access: Anyone) tanlang va berilgan havolani yuqoriga kiriting.'
+                          : '2. Deploy -> New Deployment -> Web App (Access: Anyone) and paste the URL above.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {saveErrorMessage && (
@@ -1166,7 +1508,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
               )}
             </div>
 
-            <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => setIsSaveModalOpen(false)}
@@ -1183,12 +1525,12 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                 {isSavingGoogleSheet ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>{isUz ? 'Saqlanmoqda...' : 'Saving...'}</span>
+                    <span>{isUz ? 'Yuklanmoqda...' : 'Saving...'}</span>
                   </>
                 ) : (
                   <>
                     <Check className="w-4 h-4" />
-                    <span>{isUz ? 'Saqlash' : 'Save Changes'}</span>
+                    <span>{isUz ? 'Saqlash va Yuklash' : 'Save & Sync'}</span>
                   </>
                 )}
               </button>

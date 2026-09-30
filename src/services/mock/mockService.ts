@@ -10,6 +10,7 @@ import { neonService } from '../db/neonService';
 
 import { SavedAnalysis } from '../../core/types/analysis';
 import { ColumnDefinition } from '../../core/types/sheet';
+import { detectColumnDefinition } from '../../core/detector/typeDetector';
 
 // Local storage keys
 const STORAGE_SHEETS_KEY = 'sheetflow_mock_sheets';
@@ -330,6 +331,90 @@ export class BrowserMockService {
     };
   }
 
+  private repairGenericHeaders(sheet: SheetData): boolean {
+    if (!sheet || !sheet.rows || sheet.rows.length === 0) return false;
+
+    const genericHeaders = sheet.headers.filter((h) => /^Column_\d+$/i.test(h));
+    if (genericHeaders.length < 2 && genericHeaders.length / sheet.headers.length < 0.2) {
+      return false;
+    }
+
+    const firstRow = sheet.rows[0];
+    if (!firstRow) return false;
+
+    const candidateHeaderValues: { oldCol: string; newName: string }[] = [];
+    let validHeaderCount = 0;
+
+    for (const oldCol of sheet.headers) {
+      const val = firstRow[oldCol];
+      if (val !== null && val !== undefined && String(val).trim().length > 0) {
+        const strVal = String(val).trim();
+        const cleanNum = strVal.replace(/[\$,€,UZS,\s,%]/g, '');
+        const isNum = cleanNum.length > 0 && !isNaN(Number(cleanNum));
+        if (strVal.length <= 60 && !isNum) {
+          validHeaderCount++;
+          candidateHeaderValues.push({ oldCol, newName: strVal });
+        } else {
+          candidateHeaderValues.push({ oldCol, newName: oldCol });
+        }
+      } else {
+        candidateHeaderValues.push({ oldCol, newName: oldCol });
+      }
+    }
+
+    if (validHeaderCount >= Math.max(2, Math.floor(sheet.headers.length * 0.3))) {
+      const firstColName = sheet.headers[0];
+      if (
+        firstColName &&
+        !/^Column_\d+$/i.test(firstColName) &&
+        firstColName.length > 5 &&
+        (sheet.metadata.name.startsWith('Google Sheet (') ||
+          sheet.metadata.name.startsWith('Spreadsheet ') ||
+          sheet.metadata.name === 'New Connected Sheet')
+      ) {
+        sheet.metadata.name = firstColName;
+      }
+
+      const newHeaders: string[] = [];
+      const used = new Set<string>();
+      for (let i = 0; i < candidateHeaderValues.length; i++) {
+        let name = candidateHeaderValues[i].newName;
+        let unique = name;
+        let cnt = 2;
+        while (used.has(unique.toLowerCase())) {
+          unique = `${name}_${cnt}`;
+          cnt++;
+        }
+        used.add(unique.toLowerCase());
+        newHeaders.push(unique);
+      }
+
+      const remainingRows = sheet.rows.slice(1);
+      const newRows: SheetRow[] = remainingRows.map((r, rIdx) => {
+        const obj: SheetRow = { _rowIndex: rIdx + 2 };
+        candidateHeaderValues.forEach((item, idx) => {
+          obj[newHeaders[idx]] = r[item.oldCol];
+        });
+        return obj;
+      });
+
+      const newColumns: ColumnDefinition[] = newHeaders.map((header, colIndex) => {
+        const colValues = newRows.map((r) => r[header]);
+        return detectColumnDefinition(header, colIndex, colValues);
+      });
+
+      sheet.headers = newHeaders;
+      sheet.rows = newRows;
+      sheet.metadata.columns = newColumns;
+      sheet.metadata.rowCount = newRows.length;
+      sheet.metadata.columnCount = newColumns.length;
+      sheet.metadata.lastSyncedAt = new Date().toISOString();
+      return true;
+    }
+
+    return false;
+  }
+
   private isHydratedFromNeon = false;
 
   async getSheets(): Promise<any[]> {
@@ -355,6 +440,16 @@ export class BrowserMockService {
       }
     }
 
+    // Auto-repair any sheets with generic headers
+    for (const s of this.sheets) {
+      if (this.repairGenericHeaders(s)) {
+        saveStoredSheets(this.sheets);
+        if (neonService.isConfigured()) {
+          neonService.saveSheet(s).catch(() => {});
+        }
+      }
+    }
+
     return this.sheets.map((s) => ({
       id: s.metadata.id,
       name: s.metadata.name,
@@ -372,6 +467,15 @@ export class BrowserMockService {
   async getSheetById(id: string): Promise<SheetData> {
     const s = this.sheets.find((sheet) => sheet.metadata.id === id);
     if (!s) throw new Error('Sheet not found.');
+
+    const repaired = this.repairGenericHeaders(s);
+    if (repaired) {
+      saveStoredSheets(this.sheets);
+      if (neonService.isConfigured()) {
+        neonService.saveSheet(s).catch(console.error);
+      }
+    }
+
     return {
       metadata: { ...s.metadata },
       headers: [...s.headers],
@@ -480,14 +584,22 @@ export class BrowserMockService {
         const grid = await fetchGoogleSheetCsv(sheet.metadata.url);
         if (grid && grid.length >= 2) {
           const fresh = normalizeRawGrid(sheet.metadata.name, grid, sheet.metadata.id, sheet.metadata.selectedTab, sheet.metadata.url);
+          sheet.headers = fresh.headers;
           sheet.rows = fresh.rows;
           sheet.metadata.rowCount = fresh.metadata.rowCount;
+          sheet.metadata.columnCount = fresh.metadata.columnCount;
           sheet.metadata.columns = fresh.metadata.columns;
+          sheet.metadata.name = fresh.metadata.name;
         }
-      } catch {}
+      } catch (err) {
+        console.warn('refreshSheet error:', err);
+      }
     }
     sheet.metadata.lastSyncedAt = new Date().toISOString();
     saveStoredSheets(this.sheets);
+    if (neonService.isConfigured()) {
+      neonService.saveSheet(sheet).catch(console.error);
+    }
     return sheet;
   }
 
@@ -636,6 +748,82 @@ export class BrowserMockService {
       metadata: { ...sheet.metadata },
       headers: [...sheet.headers],
       rows: sheet.rows.map((r) => ({ ...r })),
+    };
+  }
+
+  // ================= GOOGLE SHEETS LIVE SYNC =================
+  async syncGoogleSheet(
+    sheetId: string,
+    payload: {
+      tabName?: string;
+      headers: string[];
+      rows: Record<string, any>[];
+      webhookUrl?: string;
+      accessToken?: string;
+    }
+  ): Promise<{ synced: boolean; message: string; target: string }> {
+    const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
+    if (!sheet) throw new Error('Sheet not found');
+
+    const effectiveWebhook =
+      payload.webhookUrl ||
+      (typeof window !== 'undefined'
+        ? localStorage.getItem(`sheetflow_webhook_${sheetId}`) || localStorage.getItem('sheetflow_global_webhook')
+        : null);
+
+    // If Google Apps Script Webhook is configured
+    if (effectiveWebhook && effectiveWebhook.startsWith('http')) {
+      try {
+        const values = [
+          payload.headers,
+          ...payload.rows.map((r) =>
+            payload.headers.map((h) => (r[h] !== undefined && r[h] !== null ? r[h] : ''))
+          ),
+        ];
+
+        await fetch(effectiveWebhook, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'sync',
+            spreadsheetId: sheetId,
+            tabName: payload.tabName || sheet.metadata.selectedTab || 'Sheet1',
+            values,
+          }),
+        });
+
+        sheet.metadata.lastSyncedAt = new Date().toISOString();
+        saveStoredSheets(this.sheets);
+        return {
+          synced: true,
+          target: 'google_apps_script',
+          message: 'Google Sheets Apps Script orqali muvaffaqiyatli yangilandi!',
+        };
+      } catch (err: any) {
+        console.warn('Apps Script sync error:', err);
+      }
+    }
+
+    // Try serverless API sync
+    try {
+      const resp = await fetch(`/api/sheets/${sheetId}/sync-google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data?.data?.synced) {
+          return data.data;
+        }
+      }
+    } catch {}
+
+    return {
+      synced: false,
+      target: 'local_database',
+      message: 'O‘zgarishlar Neon Postgres bazasiga to‘liq saqlandi.',
     };
   }
 
