@@ -15,6 +15,9 @@ import {
   Cell,
   XAxis,
   YAxis,
+  ZAxis,
+  ScatterChart,
+  Scatter,
   Tooltip,
   Legend,
   CartesianGrid,
@@ -242,9 +245,44 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
                   verticalAlign="bottom"
                   height={36}
                   iconType="circle"
-                  formatter={(val) => <span className="text-xs text-slate-300">{val}</span>}
+                  formatter={(val) => <span className="text-xs text-slate-600 dark:text-slate-300">{val}</span>}
                 />
               </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* SCATTER CHART */}
+        {widget.type === 'scatter' && (
+          <div className="h-64 w-full pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                {widget.customOptions?.showGrid && (
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
+                )}
+                <XAxis
+                  type="category"
+                  dataKey="name"
+                  name="Category"
+                  stroke="#94a3b8"
+                  fontSize={11}
+                  tickLine={false}
+                />
+                <YAxis
+                  type="number"
+                  dataKey="value"
+                  name="Value"
+                  stroke="#94a3b8"
+                  fontSize={11}
+                  tickLine={false}
+                />
+                <ZAxis range={[60, 60]} />
+                <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+                <Scatter
+                  data={chartData}
+                  fill={widget.customOptions?.color || '#ec4899'}
+                />
+              </ScatterChart>
             </ResponsiveContainer>
           </div>
         )}

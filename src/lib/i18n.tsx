@@ -192,43 +192,12 @@ export const translations = {
     loadPastedData: 'Load Pasted Data',
     orTestWithSamples: 'Or click to test with sample spreadsheets:',
     sheetPrivateHelp: 'If your sheet is private, copy all cells (Ctrl+A, Ctrl+C) and paste them in the Direct Paste tab.',
-
-    // Accounting Module (Sections 53 - 71)
-    accounting: 'Accounting',
-    accountingSubtitle: 'Professional No-Code Double-Entry Ledger, Financial Statements & Reporting',
-    chartOfAccounts: 'Chart of Accounts',
-    journalEntries: 'Journal Entries',
-    generalLedger: 'General Ledger',
-    trialBalance: 'Trial Balance',
-    financialStatements: 'Financial Statements',
-    incomeStatement: 'Income Statement (P&L)',
-    balanceSheet: 'Balance Sheet',
-    cashFlow: 'Cash Flow Statement',
-    accountsReceivable: 'Accounts Receivable',
-    accountsPayable: 'Accounts Payable',
-    invoices: 'Invoices',
-    expenses: 'Expenses',
-    inventory: 'Inventory',
-    taxes: 'Taxes',
-    budget: 'Budget vs Actual',
-    financialRatios: 'Financial Ratios',
-    accountingReports: 'Accounting Reports',
-    sheetToAccounting: 'Sheet to Accounting Mapping',
-
-    // Economy Module (Sections 72 - 86)
-    economy: 'Economy',
-    economySubtitle: 'Macroeconomic Indicators, Econometric Models, Statistics & Forecasting',
-    economicIndicators: 'Economic Indicators',
-    economicDatasets: 'Economic Datasets',
-    economicModels: 'Economic Models',
-    breakEven: 'Break-Even Analysis',
-    priceElasticity: 'Price Elasticity',
-    supplyDemand: 'Supply & Demand Equilibrium',
-    economicComparisons: 'Country & Indicator Comparisons',
-    correlationAnalysis: 'Correlation Analysis',
-    economicForecasting: 'Economic Forecasting',
-    economicReports: 'Economic Reports',
+    // Saved Analyses
+    savedAnalyses: 'Saved Analyses',
+    savedAnalysesSubtitle: 'Access, reopen, and continue your saved spreadsheet analyses',
+    noSavedAnalyses: 'No saved analyses yet',
   },
+
   uz: {
     appName: 'SheetFlow',
     appTagline: "Google Sheets uchun No-Code Tahlil va Boshqaruv Platformasi",
@@ -418,54 +387,31 @@ export const translations = {
     loadPastedData: 'Kiritilgan maʼlumotni yuklash',
     orTestWithSamples: 'Yoki quyidagi tayyor namuna jadvallar bilan sinab koʻring:',
     sheetPrivateHelp: 'Agar jadvalingiz shaxsiy (private) boʻlsa, barcha kataklarni (Ctrl+A, Ctrl+C) nusxalab "Matndan nusxalash / CSV" boʻlimiga qoʻyishingiz mumkin.',
-
-    // Accounting Module (Sections 53 - 71)
-    accounting: 'Buxgalteriya',
-    accountingSubtitle: 'Kodsiz Ikki Yoqlama Provodkalar, Moliyaviy Hisobotlar va Bosh Kitob',
-    chartOfAccounts: 'Hisoblar rejasi',
-    journalEntries: 'Jurnal provodkalari',
-    generalLedger: 'Bosh kitob',
-    trialBalance: 'Aylanma saldo (Trial Balance)',
-    financialStatements: 'Moliyaviy hisobotlar',
-    incomeStatement: 'Moliyaviy natijalar (P&L)',
-    balanceSheet: 'Buxgalteriya balansi',
-    cashFlow: 'Pul oqimlari toʻgʻrisida hisobot',
-    accountsReceivable: 'Debitorlik qarzlari',
-    accountsPayable: 'Kreditorlik qarzlari',
-    invoices: 'Hisob-fakturalar (Invoices)',
-    expenses: 'Xarajatlar',
-    inventory: 'Ombor va zaxiralar',
-    taxes: 'Soliqlar',
-    budget: 'Byudjet va Taqqoslash',
-    financialRatios: 'Moliyaviy koeffitsientlar',
-    accountingReports: 'Buxgalteriya hisobotlari',
-    sheetToAccounting: 'Jadvalni buxgalteriyaga bogʻlash',
-
-    // Economy Module (Sections 72 - 86)
-    economy: 'Iqtisodiyot',
-    economySubtitle: 'Makroiqtisodiy Koʻrsatkichlar, Ekonometrik Modellar va Prognozlar',
-    economicIndicators: 'Iqtisodiy koʻrsatkichlar',
-    economicDatasets: 'Maʼlumotlar toʻplamlari',
-    economicModels: 'Iqtisodiy modellar',
-    breakEven: 'Zararsizlik nuqtasi (Break-Even)',
-    priceElasticity: 'Narx elastikligi (Elasticity)',
-    supplyDemand: 'Talab va taklif (Supply & Demand)',
-    economicComparisons: 'Mamlakatlarni taqqoslash',
-    correlationAnalysis: 'Korrelyatsiya tahlili',
-    economicForecasting: 'Iqtisodiy prognozlash',
-    economicReports: 'Iqtisodiy hisobotlar',
+    // Saved Analyses
+    savedAnalyses: 'Saqlangan tahlillar',
+    savedAnalysesSubtitle: 'Saqlangan jadvallar tahlilini qayta ochish, yangilash va davom ettirish',
+    noSavedAnalyses: 'Hozircha saqlangan tahlillar mavjud emas',
   },
+
 };
 
 interface I18nContextType {
   lang: Language;
   setLang: (lang: Language) => void;
+  currency: string;
+  setCurrency: (currency: string) => void;
+  dateFormat: string;
+  setDateFormat: (dateFormat: string) => void;
   t: (key: keyof typeof translations.en) => string;
 }
 
 const I18nContext = createContext<I18nContextType>({
   lang: 'en',
   setLang: () => {},
+  currency: 'USD',
+  setCurrency: () => {},
+  dateFormat: 'YYYY-MM-DD',
+  setDateFormat: () => {},
   t: (key) => translations.en[key] || key,
 });
 
@@ -474,9 +420,27 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return (localStorage.getItem('sheetflow_lang') as Language) || 'en';
   });
 
+  const [currency, setCurrencyState] = useState<string>(() => {
+    return localStorage.getItem('sheetflow_currency') || 'USD';
+  });
+
+  const [dateFormat, setDateFormatState] = useState<string>(() => {
+    return localStorage.getItem('sheetflow_date_format') || 'YYYY-MM-DD';
+  });
+
   const setLang = (newLang: Language) => {
     setLangState(newLang);
     localStorage.setItem('sheetflow_lang', newLang);
+  };
+
+  const setCurrency = (newCurr: string) => {
+    setCurrencyState(newCurr);
+    localStorage.setItem('sheetflow_currency', newCurr);
+  };
+
+  const setDateFormat = (newFmt: string) => {
+    setDateFormatState(newFmt);
+    localStorage.setItem('sheetflow_date_format', newFmt);
   };
 
   const t = (key: keyof typeof translations.en): string => {
@@ -484,7 +448,17 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <I18nContext.Provider value={{ lang, setLang, t }}>
+    <I18nContext.Provider
+      value={{
+        lang,
+        setLang,
+        currency,
+        setCurrency,
+        dateFormat,
+        setDateFormat,
+        t,
+      }}
+    >
       {children}
     </I18nContext.Provider>
   );

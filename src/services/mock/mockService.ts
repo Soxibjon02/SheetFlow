@@ -6,15 +6,168 @@ import { generateDashboard } from '../../core/dashboard-generator/dashboardGener
 import { calculate } from '../../core/calculations/engine';
 import { getInitialSampleSheets } from '../../core/sample-data';
 import { extractSpreadsheetId, extractSpreadsheetInfo, parseCsvOrTsvToGrid, normalizeRawGrid } from '../../core/datasource';
+import { neonService } from '../db/neonService';
+
+import { SavedAnalysis } from '../../core/types/analysis';
+import { ColumnDefinition } from '../../core/types/sheet';
 
 // Local storage keys
 const STORAGE_SHEETS_KEY = 'sheetflow_mock_sheets';
 const STORAGE_DASHBOARDS_KEY = 'sheetflow_mock_dashboards';
+const STORAGE_SAVED_ANALYSES_KEY = 'sheetflow_mock_saved_analyses';
+const STORAGE_RECENT_TRACKER_KEY = 'sheetflow_mock_recents';
+
+function getInitialSampleAnalyses(): SavedAnalysis[] {
+  return [
+    {
+      id: 'analysis_sample_1',
+      name: 'MRR by Country',
+      connectedSheetId: 'sheet_saas_metrics',
+      sheetName: 'SaaS Revenue & Growth 2026',
+      sheetTab: 'Sheet1',
+      spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sample_saas_metrics',
+      functionId: 'COMPARE_CATEGORIES',
+      visualizationType: 'bar',
+      config: {
+        functionId: 'COMPARE_CATEGORIES',
+        column: 'Country',
+        parameters: { valueColumn: 'MRR' },
+        visualizationType: 'bar',
+      },
+      lastCalculatedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+      updatedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+      insights: [
+        'Uzbekistan accounts for the highest MRR with $14,100',
+        'United States generated the second largest MRR',
+      ],
+      history: [
+        {
+          timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+          action: 'recalculated',
+          description: 'Refreshed with latest sheet data',
+        },
+        {
+          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+          action: 'created',
+          description: 'Initial analysis created',
+        },
+      ],
+    },
+    {
+      id: 'analysis_sample_2',
+      name: 'Monthly Expenses Breakdown',
+      connectedSheetId: 'sheet_ops_expenses',
+      sheetName: 'Operational Expenses Tracker 2026',
+      sheetTab: 'Sheet1',
+      spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sample_expenses',
+      functionId: 'COMPARE_CATEGORIES',
+      visualizationType: 'pie',
+      config: {
+        functionId: 'COMPARE_CATEGORIES',
+        column: 'Category',
+        parameters: { valueColumn: 'Amount' },
+        visualizationType: 'pie',
+      },
+      lastCalculatedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(),
+      updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+      insights: [
+        'Advertising accounted for the highest single spend ($6,500)',
+        'Infrastructure represents the second major expense',
+      ],
+      history: [
+        {
+          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+          action: 'updated',
+          description: 'Changed visualization to Pie chart',
+        },
+      ],
+    },
+    {
+      id: 'analysis_sample_3',
+      name: 'Score by City & Subject',
+      connectedSheetId: 'sheet_students_sample',
+      sheetName: 'Student Exam & Performance 2026',
+      sheetTab: 'Sheet1',
+      spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/sample_students',
+      functionId: 'AVERAGE',
+      visualizationType: 'bar',
+      config: {
+        functionId: 'AVERAGE',
+        column: 'Score',
+        groupBy: 'City',
+        visualizationType: 'bar',
+      },
+      lastCalculatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
+      updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+      insights: [
+        'Tashkent students achieved the highest average score (89.2)',
+        'Samarkand followed with an 85.0 average score',
+      ],
+    },
+  ];
+}
+
+function loadStoredAnalyses(): SavedAnalysis[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_SAVED_ANALYSES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  const initial = getInitialSampleAnalyses();
+  saveStoredAnalyses(initial);
+  return initial;
+}
+
+interface RecentTracking {
+  sheetOpened: Record<string, string>;
+  analysisOpened: Record<string, string>;
+}
+
+function loadRecentTracking(): RecentTracking {
+  try {
+    const raw = localStorage.getItem(STORAGE_RECENT_TRACKER_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {
+    sheetOpened: {
+      'sheet_students_sample': new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+      'sheet_saas_metrics': new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    },
+    analysisOpened: {
+      'analysis_sample_1': new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+      'analysis_sample_2': new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    },
+  };
+}
+
+function saveRecentTracking(rec: RecentTracking) {
+  try {
+    localStorage.setItem(STORAGE_RECENT_TRACKER_KEY, JSON.stringify(rec));
+  } catch {}
+}
+
+function saveStoredAnalyses(analyses: SavedAnalysis[]) {
+  try {
+    localStorage.setItem(STORAGE_SAVED_ANALYSES_KEY, JSON.stringify(analyses));
+  } catch {}
+}
 
 function loadStoredSheets(): SheetData[] {
   try {
     const raw = localStorage.getItem(STORAGE_SHEETS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
   } catch {}
   const initial = getInitialSampleSheets();
   saveStoredSheets(initial);
@@ -86,6 +239,8 @@ async function fetchGoogleSheetCsv(urlOrId: string): Promise<string[][] | null> 
 export class BrowserMockService {
   private sheets: SheetData[] = loadStoredSheets();
   private dashboards: DashboardConfig[] = [];
+  private savedAnalyses: SavedAnalysis[] = loadStoredAnalyses();
+  private recentTracking: RecentTracking = loadRecentTracking();
 
   async previewSheet(url: string): Promise<SheetPreviewResult> {
     const trimmed = url.trim();
@@ -175,7 +330,31 @@ export class BrowserMockService {
     };
   }
 
+  private isHydratedFromNeon = false;
+
   async getSheets(): Promise<any[]> {
+    if (neonService.isConfigured() && !this.isHydratedFromNeon) {
+      try {
+        const dbSheets = await neonService.loadSheets();
+        if (dbSheets && dbSheets.length > 0) {
+          const merged = [...dbSheets];
+          for (const local of this.sheets) {
+            if (!merged.some((m) => m.metadata.id === local.metadata.id)) {
+              merged.push(local);
+              neonService.saveSheet(local).catch(() => {});
+            }
+          }
+          this.sheets = merged;
+          saveStoredSheets(this.sheets);
+        } else if (dbSheets && dbSheets.length === 0 && this.sheets.length > 0) {
+          neonService.syncAllToNeon(this.sheets).catch(() => {});
+        }
+        this.isHydratedFromNeon = true;
+      } catch (err) {
+        console.warn('Neon hydration error:', err);
+      }
+    }
+
     return this.sheets.map((s) => ({
       id: s.metadata.id,
       name: s.metadata.name,
@@ -203,6 +382,9 @@ export class BrowserMockService {
   async deleteSheet(id: string): Promise<boolean> {
     this.sheets = this.sheets.filter((sheet) => sheet.metadata.id !== id);
     saveStoredSheets(this.sheets);
+    if (neonService.isConfigured()) {
+      neonService.deleteSheet(id).catch(console.error);
+    }
     return true;
   }
 
@@ -225,6 +407,9 @@ export class BrowserMockService {
     };
     this.sheets.unshift(newSheet);
     saveStoredSheets(this.sheets);
+    if (neonService.isConfigured()) {
+      neonService.saveSheet(newSheet).catch(console.error);
+    }
     return newSheet;
   }
 
@@ -240,6 +425,9 @@ export class BrowserMockService {
       lastSyncedAt: new Date().toISOString(),
     };
     saveStoredSheets(this.sheets);
+    if (neonService.isConfigured()) {
+      neonService.saveSheet(sheet).catch(console.error);
+    }
     return newRow;
   }
 
@@ -259,6 +447,9 @@ export class BrowserMockService {
         lastSyncedAt: new Date().toISOString(),
       };
       saveStoredSheets(this.sheets);
+      if (neonService.isConfigured()) {
+        neonService.saveSheet(sheet).catch(console.error);
+      }
       return updatedRow;
     }
     throw new Error('Row not found.');
@@ -276,6 +467,9 @@ export class BrowserMockService {
       lastSyncedAt: new Date().toISOString(),
     };
     saveStoredSheets(this.sheets);
+    if (neonService.isConfigured()) {
+      neonService.saveSheet(sheet).catch(console.error);
+    }
     return true;
   }
 
@@ -324,6 +518,164 @@ export class BrowserMockService {
       this.dashboards.push(dashboard);
     }
     return dashboard;
+  }
+
+  // ================= SAVED ANALYSES (SECTIONS 30 - 36) =================
+  async getSavedAnalyses(): Promise<SavedAnalysis[]> {
+    return [...this.savedAnalyses].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+  }
+
+  async getSavedAnalysisById(id: string): Promise<SavedAnalysis> {
+    const analysis = this.savedAnalyses.find((a) => a.id === id);
+    if (!analysis) throw new Error('Saved analysis not found.');
+    this.trackAnalysisOpened(id);
+    return { ...analysis };
+  }
+
+  async saveAnalysis(analysisData: Partial<SavedAnalysis>): Promise<SavedAnalysis> {
+    const id = analysisData.id || `analysis_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    const existingIdx = this.savedAnalyses.findIndex((a) => a.id === id);
+    if (existingIdx >= 0) {
+      const existing = this.savedAnalyses[existingIdx];
+      const updated: SavedAnalysis = {
+        ...existing,
+        ...analysisData,
+        id,
+        updatedAt: now,
+        history: [
+          {
+            timestamp: now,
+            action: 'updated',
+            description: `Updated analysis configuration (${analysisData.name || existing.name})`,
+          },
+          ...(existing.history || []),
+        ],
+      } as SavedAnalysis;
+      this.savedAnalyses[existingIdx] = updated;
+      saveStoredAnalyses(this.savedAnalyses);
+      this.trackAnalysisOpened(id);
+      return updated;
+    }
+
+    const newAnalysis: SavedAnalysis = {
+      id,
+      userId: 'user_default',
+      name: analysisData.name || 'Untitled Analysis',
+      connectedSheetId: analysisData.connectedSheetId || '',
+      sheetName: analysisData.sheetName || 'Connected Sheet',
+      sheetTab: analysisData.sheetTab || 'Sheet1',
+      spreadsheetUrl: analysisData.spreadsheetUrl,
+      functionId: analysisData.functionId || 'SUM',
+      visualizationType: analysisData.visualizationType || 'kpi',
+      config: analysisData.config || {
+        functionId: analysisData.functionId || 'SUM',
+      },
+      lastResult: analysisData.lastResult,
+      insights: analysisData.insights || [],
+      lastCalculatedAt: analysisData.lastCalculatedAt || now,
+      createdAt: now,
+      updatedAt: now,
+      history: [
+        {
+          timestamp: now,
+          action: 'created',
+          description: `Analysis created`,
+        },
+      ],
+    };
+
+    this.savedAnalyses.unshift(newAnalysis);
+    saveStoredAnalyses(this.savedAnalyses);
+    this.trackAnalysisOpened(id);
+    return newAnalysis;
+  }
+
+  async updateAnalysis(id: string, updates: Partial<SavedAnalysis>): Promise<SavedAnalysis> {
+    return this.saveAnalysis({ ...updates, id });
+  }
+
+  async deleteAnalysis(id: string): Promise<boolean> {
+    this.savedAnalyses = this.savedAnalyses.filter((a) => a.id !== id);
+    saveStoredAnalyses(this.savedAnalyses);
+    return true;
+  }
+
+  // ================= LOCAL-FIRST SHEET SAVING (SECTION 15 & 16) =================
+  async saveSheetChanges(
+    sheetId: string,
+    rows: Record<string, any>[],
+    columns?: ColumnDefinition[]
+  ): Promise<SheetData> {
+    const sheet = this.sheets.find((s) => s.metadata.id === sheetId);
+    if (!sheet) throw new Error('Sheet not found.');
+
+    const now = new Date().toISOString();
+    sheet.rows = rows.map((r, i) => ({
+      ...r,
+      _rowIndex: r._rowIndex || i + 2,
+    }));
+    sheet.metadata.rowCount = rows.length;
+
+    if (columns && columns.length > 0) {
+      sheet.metadata.columns = columns;
+      sheet.metadata.columnCount = columns.length;
+      sheet.headers = columns.map((c) => c.name);
+    }
+    sheet.metadata.lastSyncedAt = now;
+
+    saveStoredSheets(this.sheets);
+    if (neonService.isConfigured()) {
+      neonService.saveSheet(sheet).catch(console.error);
+    }
+
+    return {
+      metadata: { ...sheet.metadata },
+      headers: [...sheet.headers],
+      rows: sheet.rows.map((r) => ({ ...r })),
+    };
+  }
+
+  // ================= RECENT TRACKING (SECTION 4) =================
+  trackSheetOpened(sheetId: string) {
+    this.recentTracking.sheetOpened[sheetId] = new Date().toISOString();
+    saveRecentTracking(this.recentTracking);
+  }
+
+  trackAnalysisOpened(analysisId: string) {
+    this.recentTracking.analysisOpened[analysisId] = new Date().toISOString();
+    saveRecentTracking(this.recentTracking);
+  }
+
+  async getRecentSheets(): Promise<any[]> {
+    const all = await this.getSheets();
+    return all
+      .map((s) => ({
+        ...s,
+        lastOpenedAt: this.recentTracking.sheetOpened[s.id] || s.lastSyncedAt,
+      }))
+      .sort(
+        (a, b) =>
+          new Date(b.lastOpenedAt || 0).getTime() - new Date(a.lastOpenedAt || 0).getTime()
+      )
+      .slice(0, 5);
+  }
+
+  async getRecentAnalyses(): Promise<SavedAnalysis[]> {
+    const all = await this.getSavedAnalyses();
+    return all
+      .map((a) => ({
+        ...a,
+        lastOpenedAt: this.recentTracking.analysisOpened[a.id] || a.updatedAt,
+      }))
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.lastOpenedAt || 0).getTime() - new Date(a.lastOpenedAt || 0).getTime()
+      )
+      .slice(0, 5);
   }
 }
 

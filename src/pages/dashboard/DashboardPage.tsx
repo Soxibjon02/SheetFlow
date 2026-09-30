@@ -1,51 +1,92 @@
 import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api/client';
 import { useI18n } from '../../lib/i18n';
 import { useAuth } from '../../lib/auth';
 import { ConnectSheetModal } from '../../components/sheets/ConnectSheetModal';
+import { SavedAnalysis } from '../../core/types/analysis';
 import {
   FileSpreadsheet,
   Plus,
-  TrendingUp,
   Sparkles,
   ArrowRight,
   Database,
   Calculator,
-  LayoutGrid,
+  BookmarkCheck,
   CheckCircle2,
   Clock,
-  Layers,
+  BarChart3,
+  LineChart as LineIcon,
+  PieChart as PieIcon,
+  Hash,
+  ExternalLink,
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
 
 export const DashboardPage: React.FC = () => {
   const { t, lang } = useI18n();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [sheets, setSheets] = useState<any[]>([]);
+
+  const isUz = lang === 'uz';
+
+  const [recentSheets, setRecentSheets] = useState<any[]>([]);
+  const [recentAnalyses, setRecentAnalyses] = useState<SavedAnalysis[]>([]);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchSheets = async () => {
+  const fetchData = async () => {
     setIsLoading(true);
     try {
-      const data = await api.getSheets();
-      setSheets(data);
+      const [sheets, analyses] = await Promise.all([
+        api.getRecentSheets(),
+        api.getRecentAnalyses(),
+      ]);
+      setRecentSheets(sheets);
+      setRecentAnalyses(analyses);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchSheets();
+    fetchData();
   }, []);
 
-  const totalRows = sheets.reduce((acc, s) => acc + (s.rowCount || 0), 0);
-  const totalCols = sheets.reduce((acc, s) => acc + (s.columnCount || 0), 0);
+  const formatRelativeTime = (isoString?: string) => {
+    if (!isoString) return isUz ? 'Yaqinda' : 'Recently';
+    try {
+      const diffMs = Date.now() - new Date(isoString).getTime();
+      const mins = Math.floor(diffMs / (1000 * 60));
+      const hours = Math.floor(mins / 60);
+      const days = Math.floor(hours / 24);
+
+      if (mins < 1) return isUz ? 'Hozirgina' : 'Just now';
+      if (mins < 60) return isUz ? `${mins} daqiqa oldin` : `${mins} min ago`;
+      if (hours < 24) return isUz ? `${hours} soat oldin` : `${hours} hours ago`;
+      if (days === 1) return isUz ? 'Kecha' : 'Yesterday';
+      return isUz ? `${days} kun oldin` : `${days} days ago`;
+    } catch {
+      return isUz ? 'Yaqinda' : 'Recently';
+    }
+  };
+
+  const getVisualizationIcon = (type: string) => {
+    switch (type) {
+      case 'bar':
+        return BarChart3;
+      case 'line':
+        return LineIcon;
+      case 'pie':
+      case 'donut':
+        return PieIcon;
+      default:
+        return Hash;
+    }
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
-      {/* Welcome Banner */}
+      {/* ================= HERO CTA BANNER (Section 4) ================= */}
       <div className="relative rounded-3xl p-6 md:p-8 bg-gradient-to-r from-white via-slate-50 to-emerald-50/60 dark:from-slate-900 dark:via-slate-900/90 dark:to-emerald-950/40 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
         <div className="absolute right-0 top-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
 
@@ -54,216 +95,189 @@ export const DashboardPage: React.FC = () => {
             <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
               <Sparkles className="w-3.5 h-3.5" />
               <span>
-                {lang === 'uz'
-                  ? 'Kodsiz Google Sheets Tahlili va Boshqaruvi'
-                  : 'No-Code Calculation & Analytics Platform'}
+                {isUz
+                  ? 'Google Sheets, lekin tahlil qilish va vizualizatsiya ancha osonroq'
+                  : 'Google Sheets, but much easier to analyze, calculate, and visualize'}
               </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              {lang === 'uz' ? `Xush kelibsiz, ${user?.name || 'Foydalanuvchi'}!` : `Welcome back, ${user?.name || 'Explorer'}!`}
+              {isUz
+                ? `Xush kelibsiz, ${user?.name || 'Foydalanuvchi'}!`
+                : `Welcome to SheetFlow, ${user?.name || 'Explorer'}!`}
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-              {lang === 'uz'
-                ? 'Istalgan Google Sheets jadvalini ulang, formulalarsiz hisoblang, interaktiv boshqaruv panellarini yarating va maʼlumotlarni sinxronlang.'
-                : 'Connect any Google Sheet, perform formula-free calculations, generate dynamic executive dashboards, and sync modifications live.'}
+              {isUz
+                ? 'Google Sheets jadvalingizni ulang. SheetFlow ma’lumotlarni avtomatik tushunadi, formulalarsiz hisoblaydi va vizualizatsiya yaratadi.'
+                : 'Connect your Google Sheet. SheetFlow automatically understands columns, calculates metrics without formulas, and creates beautiful charts.'}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* Primary CTA (Section 4) */}
             <button
               onClick={() => setIsConnectModalOpen(true)}
-              className="flex items-center space-x-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm shadow-xl shadow-emerald-500/25 transition-all cursor-pointer"
+              className="flex items-center space-x-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-sm shadow-xl shadow-emerald-500/25 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
-              <span>{t('connectSheet')}</span>
+              <span>{isUz ? 'Google Sheet ulash' : 'Connect Google Sheet'}</span>
             </button>
             <Link
-              to="/templates"
-              className="flex items-center space-x-2 px-5 py-3 rounded-2xl bg-white hover:bg-slate-100 dark:bg-slate-800/90 dark:hover:bg-slate-700/80 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white font-semibold text-sm transition shadow-sm"
+              to="/sheets"
+              className="flex items-center space-x-2 px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-100 dark:bg-slate-800/90 dark:hover:bg-slate-700/80 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white font-semibold text-sm transition shadow-sm"
             >
-              <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>{lang === 'uz' ? 'Shablonlarni koʻrish' : 'Explore Templates'}</span>
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>{t('mySheets')}</span>
             </Link>
           </div>
         </div>
       </div>
 
-      {/* High-level Metric Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/60 backdrop-blur-md space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-medium">
-            <span>{t('connectedSheets')}</span>
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white font-mono">{sheets.length}</div>
-          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center space-x-1 font-medium">
-            <CheckCircle2 className="w-3 h-3" />
-            <span>{lang === 'uz' ? 'Faol va Sinxronlashgan' : 'Active & In Sync'}</span>
-          </div>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/60 backdrop-blur-md space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-medium">
-            <span>{t('indexedRows')}</span>
-            <Database className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white font-mono">{totalRows}</div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400">
-            {lang === 'uz' ? 'Jonli hisoblash uchun tayyor' : 'Available for live queries'}
-          </div>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/60 backdrop-blur-md space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-medium">
-            <span>{t('schemaColumns')}</span>
-            <Layers className="w-4 h-4 text-cyan-500 dark:text-cyan-400" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white font-mono">{totalCols}</div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400">
-            {lang === 'uz' ? 'Avtomatik aniqlangan turlar' : 'Auto-detected data types'}
-          </div>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/60 backdrop-blur-md space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-medium">
-            <span>{t('calculationEngine')}</span>
-            <Calculator className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white font-mono">25+</div>
-          <div className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
-            {lang === 'uz' ? 'Tayyor kodsiz funksiyalar' : 'Pre-built no-code functions'}
-          </div>
-        </div>
-      </div>
-
-      {/* Main Section: Connected Spreadsheets */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-              {t('connectedSheets')}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {lang === 'uz'
-                ? 'Google Sheets jadvallaringizni boshqaring, tahlil qiling va hisob-kitob qiling'
-                : 'Manage, preview, and compute calculations across your Google Sheets'}
-            </p>
-          </div>
-          <Link
-            to="/sheets"
-            className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 flex items-center space-x-1"
-          >
-            <span>{lang === 'uz' ? 'Barchasini koʻrish' : 'View All'}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {sheets.map((sheet) => (
-            <div
-              key={sheet.id}
-              className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/70 backdrop-blur-md p-5 flex flex-col justify-between hover:border-emerald-500/40 dark:hover:border-emerald-500/30 transition shadow-sm group"
-            >
-              <div className="space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-105 transition-transform">
-                    <FileSpreadsheet className="w-5 h-5" />
-                  </div>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                    {sheet.selectedTab || 'Sheet1'}
-                  </span>
-                </div>
-
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-300 transition truncate">
-                    {sheet.name}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5 font-mono">
-                    {sheet.url || 'Connected Sheet'}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-xs">
-                  <div>
-                    <span className="text-slate-500 dark:text-slate-400 block text-[10px]">
-                      {lang === 'uz' ? 'Qatorlar' : 'Rows'}
-                    </span>
-                    <span className="font-mono font-bold text-slate-900 dark:text-white">{sheet.rowCount}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 dark:text-slate-400 block text-[10px]">
-                      {lang === 'uz' ? 'Ustunlar' : 'Columns'}
-                    </span>
-                    <span className="font-mono font-bold text-slate-900 dark:text-white">{sheet.columnCount}</span>
-                  </div>
-                </div>
+      {/* ================= 2 MAIN SECTIONS: RECENT SHEETS & RECENT ANALYSES (Section 4) ================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* 1. RECENT SHEETS */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                <FileSpreadsheet className="w-4 h-4" />
               </div>
-
-              <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                <Link
-                  to={`/sheets/${sheet.id}`}
-                  className="flex-1 text-center py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 transition"
-                >
-                  {t('viewSpreadsheet')}
-                </Link>
-                <Link
-                  to={`/analytics?sheetId=${sheet.id}`}
-                  className="py-2 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-xs font-semibold text-emerald-600 dark:text-emerald-300 transition"
-                >
-                  {t('analyzeData')}
-                </Link>
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                  {isUz ? 'Oxirgi ochilgan jadvallar' : 'Recent Sheets'}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {isUz ? 'Yaqinda ishlatilgan Google Sheets jadvallari' : 'Recently accessed spreadsheets'}
+                </p>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Quick Launchpad Banner */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
-        <div className="p-6 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-white to-white dark:from-indigo-950/40 dark:via-slate-900 dark:to-slate-900 border border-indigo-200 dark:border-indigo-500/20 space-y-4 shadow-sm">
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-            <Calculator className="w-5 h-5" />
+            <Link
+              to="/sheets"
+              className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center space-x-1"
+            >
+              <span>{isUz ? 'Barchasi' : 'View all'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
-          <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              {lang === 'uz' ? 'Kodsiz Funksiyalar Konstruktori' : 'No-Code Function Builder'}
-            </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-              {lang === 'uz'
-                ? 'Oʻrtacha qiymatlar, shartli yigʻindilar, foizlar va koʻp bosqichli guruhlashni bitta formula yozmasdan hisoblang.'
-                : 'Compute averages, conditional sums, percentiles, and multi-level groupings without writing a single formula.'}
-            </p>
+
+          <div className="space-y-3">
+            {recentSheets.length === 0 ? (
+              <div className="p-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-xs text-slate-400">
+                {isUz ? 'Jadvallar mavjud emas' : 'No sheets opened yet'}
+              </div>
+            ) : (
+              recentSheets.map((sheet) => (
+                <div
+                  key={sheet.id}
+                  onClick={() => navigate(`/sheets/${sheet.id}`)}
+                  className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-emerald-500/40 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer flex items-center justify-between group shadow-sm"
+                >
+                  <div className="flex items-center space-x-3.5 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-400 group-hover:text-emerald-500 group-hover:bg-emerald-500/10 transition shrink-0">
+                      <FileSpreadsheet className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition truncate">
+                        {sheet.name}
+                      </h3>
+                      <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        <span className="font-mono text-[11px]">{sheet.rowCount} {isUz ? 'qator' : 'rows'}</span>
+                        <span>•</span>
+                        <span className="flex items-center space-x-1">
+                          <Clock className="w-3 h-3" />
+                          <span>
+                            {isUz ? 'Ochilgan:' : 'Last opened:'} {formatRelativeTime(sheet.lastOpenedAt)}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hidden sm:inline-block">
+                      {isUz ? 'Faol' : 'In Sync'}
+                    </span>
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white group-hover:translate-x-0.5 transition" />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-          <Link
-            to="/calculations"
-            className="inline-flex items-center space-x-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500"
-          >
-            <span>{lang === 'uz' ? 'Hisoblash studiyasiga oʻtish' : 'Launch Calculation Studio'}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
         </div>
 
-        <div className="p-6 rounded-2xl bg-gradient-to-br from-emerald-50/70 via-white to-white dark:from-emerald-950/40 dark:via-slate-900 dark:to-slate-900 border border-emerald-200 dark:border-emerald-500/20 space-y-4 shadow-sm">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-            <LayoutGrid className="w-5 h-5" />
+        {/* 2. RECENT ANALYSES */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                <BookmarkCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                  {isUz ? 'Oxirgi tahlillar' : 'Recent Analyses'}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {isUz ? 'Yaqinda saqlangan va ishlatilgan tahlillar' : 'Recently updated calculations'}
+                </p>
+              </div>
+            </div>
+
+            <Link
+              to="/saved-analyses"
+              className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center space-x-1"
+            >
+              <span>{isUz ? 'Barchasi' : 'View all'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
-          <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              {lang === 'uz' ? 'Avtomatik Dashboard Generatori' : 'Automatic Dashboard Generator'}
-            </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-              {lang === 'uz'
-                ? 'Jadvallarni 1-bosqichda KPI koʻrsatkichlari, ustunli diagrammalar, trend chiziqlari va maʼlumotlar panellariga aylantiring.'
-                : '1-click converts raw spreadsheets into KPI metric cards, bar charts, trend lines, and data tables.'}
-            </p>
+
+          <div className="space-y-3">
+            {recentAnalyses.length === 0 ? (
+              <div className="p-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-xs text-slate-400">
+                {isUz ? 'Hozircha tahlillar saqlanmagan' : 'No analyses created yet'}
+              </div>
+            ) : (
+              recentAnalyses.map((analysis) => {
+                const Icon = getVisualizationIcon(analysis.visualizationType);
+
+                return (
+                  <div
+                    key={analysis.id}
+                    onClick={() => navigate('/saved-analyses')}
+                    className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-emerald-500/40 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer flex items-center justify-between group shadow-sm"
+                  >
+                    <div className="flex items-center space-x-3.5 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-400 group-hover:text-emerald-500 group-hover:bg-emerald-500/10 transition shrink-0">
+                        <Icon className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition truncate">
+                          {analysis.name}
+                        </h3>
+                        <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                          <span className="truncate max-w-[120px]">{analysis.sheetName}</span>
+                          <span>•</span>
+                          <span className="flex items-center space-x-1">
+                            <Clock className="w-3 h-3" />
+                            <span>
+                              {isUz ? 'Yangilangan:' : 'Updated'} {formatRelativeTime(analysis.updatedAt)}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hidden sm:inline-block">
+                        {analysis.functionId}
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white group-hover:translate-x-0.5 transition" />
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
-          <Link
-            to="/dashboards"
-            className="inline-flex items-center space-x-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500"
-          >
-            <span>{lang === 'uz' ? 'Boshqaruv panelini yaratish' : 'Generate Executive Dashboard'}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
         </div>
       </div>
 
@@ -271,9 +285,9 @@ export const DashboardPage: React.FC = () => {
       <ConnectSheetModal
         isOpen={isConnectModalOpen}
         onClose={() => setIsConnectModalOpen(false)}
-        onConnected={(sheetId) => {
-          fetchSheets();
-          navigate(`/sheets/${sheetId}`);
+        onConnected={async () => {
+          setIsConnectModalOpen(false);
+          await fetchData();
         }}
       />
     </div>

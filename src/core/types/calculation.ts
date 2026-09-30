@@ -31,13 +31,10 @@ export interface FilterGroup {
 
 export type FunctionCategory =
   | 'Basic'
-  | 'Conditional'
-  | 'Data'
-  | 'Date'
-  | 'Text'
+  | 'Comparison'
   | 'Percentage'
-  | 'Accounting'
-  | 'Economy';
+  | 'Time Analysis'
+  | 'Data Operations';
 
 export type VisualizationType =
   | 'kpi'
@@ -46,7 +43,9 @@ export type VisualizationType =
   | 'area'
   | 'pie'
   | 'donut'
+  | 'scatter'
   | 'table';
+
 
 export interface FunctionParameter {
   name: string;

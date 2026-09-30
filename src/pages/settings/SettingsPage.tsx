@@ -18,7 +18,7 @@ import {
 export const SettingsPage: React.FC = () => {
   const { user, connectGoogle, disconnectGoogle } = useAuth();
   const { theme, setTheme } = useTheme();
-  const { lang, setLang, t } = useI18n();
+  const { lang, setLang, currency, setCurrency, dateFormat, setDateFormat, t } = useI18n();
 
   const [notification, setNotification] = useState<string | null>(null);
 
@@ -212,6 +212,55 @@ export const SettingsPage: React.FC = () => {
                   <span>{t('light')}</span>
                 </button>
               </div>
+            </div>
+
+            {/* Default Currency (Section 52) */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {lang === 'uz' ? 'Standart valyuta' : 'Default Currency'}
+              </label>
+              <select
+                value={currency}
+                onChange={(e) => {
+                  setCurrency(e.target.value);
+                  showNotice(
+                    lang === 'uz'
+                      ? `Valyuta ${e.target.value} ga o‘rnatildi`
+                      : `Currency set to ${e.target.value}`
+                  );
+                }}
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
+              >
+                <option value="USD">USD ($)</option>
+                <option value="UZS">UZS (so‘m)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="GBP">GBP (£)</option>
+                <option value="RUB">RUB (₽)</option>
+                <option value="KZT">KZT (₸)</option>
+              </select>
+            </div>
+
+            {/* Date Format (Section 52) */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {lang === 'uz' ? 'Sana formati' : 'Date Format'}
+              </label>
+              <select
+                value={dateFormat}
+                onChange={(e) => {
+                  setDateFormat(e.target.value);
+                  showNotice(
+                    lang === 'uz'
+                      ? `Sana formati ${e.target.value} ga o‘rnatildi`
+                      : `Date format set to ${e.target.value}`
+                  );
+                }}
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
+              >
+                <option value="YYYY-MM-DD">YYYY-MM-DD (2026-09-30)</option>
+                <option value="DD/MM/YYYY">DD/MM/YYYY (30/09/2026)</option>
+                <option value="MM/DD/YYYY">MM/DD/YYYY (09/30/2026)</option>
+              </select>
             </div>
           </div>
         </div>

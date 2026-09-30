@@ -192,14 +192,26 @@ export function analyzeSheet(sheetData: SheetData): SheetAnalysisReport {
   // 5. Date trend (Line chart)
   if (primaryDateColumn && primaryNumericColumn) {
     suggestedAnalytics.push({
-      id: `sugg_trend_${primaryNumericColumn}`,
-      title: `${primaryNumericColumn} Over Time`,
-      description: `Timeline progression grouped by date`,
+      id: `sugg_monthly_${primaryNumericColumn}`,
+      title: `Monthly ${primaryNumericColumn}`,
+      description: `Monthly timeline breakdown of ${primaryNumericColumn}`,
       chartType: 'line',
       calculation: {
-        function: 'GROUP_BY_MONTH',
+        function: 'MONTHLY_TOTAL',
         column: primaryDateColumn,
-        parameters: { metricColumn: primaryNumericColumn },
+        parameters: { valueColumn: primaryNumericColumn, dateColumn: primaryDateColumn },
+      },
+    });
+
+    suggestedAnalytics.push({
+      id: `sugg_growth_${primaryNumericColumn}`,
+      title: `${primaryNumericColumn} Growth`,
+      description: `Overall percentage growth of ${primaryNumericColumn} across recorded dates`,
+      chartType: 'kpi',
+      calculation: {
+        function: 'GROWTH',
+        column: primaryNumericColumn,
+        parameters: { dateColumn: primaryDateColumn },
       },
     });
   }

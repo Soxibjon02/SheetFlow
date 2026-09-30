@@ -65,33 +65,6 @@ describe('Calculation Engine (Section 45 & 46 Requirements)', () => {
     expect(tashkent?.value).toBe(30); // (20 + 40) / 2 = 30
   });
 
-  it('calculates COUNTIF correctly', () => {
-    const result = calculate(sampleScores, {
-      function: 'COUNTIF',
-      column: 'Passed',
-      parameters: { targetValue: 'Yes', operator: 'equals' },
-    });
-    expect(result.value).toBe(2);
-  });
-
-  it('calculates SUMIF correctly', () => {
-    const result = calculate(sampleScores, {
-      function: 'SUMIF',
-      column: 'Score',
-      parameters: { conditionColumn: 'Passed', targetValue: 'Yes', operator: 'equals' },
-    });
-    expect(result.value).toBe(70); // 30 + 40 = 70
-  });
-
-  it('calculates AVERAGEIF correctly', () => {
-    const result = calculate(sampleScores, {
-      function: 'AVERAGEIF',
-      column: 'Score',
-      parameters: { conditionColumn: 'City', targetValue: 'Samarkand', operator: 'equals' },
-    });
-    expect(result.value).toBe(20); // (10 + 30) / 2 = 20
-  });
-
   it('calculates PERCENTAGE correctly', () => {
     const result = calculate(sampleScores, {
       function: 'PERCENTAGE',
@@ -101,13 +74,119 @@ describe('Calculation Engine (Section 45 & 46 Requirements)', () => {
     expect(result.value).toBe(50); // 2 out of 4 = 50%
   });
 
-  it('calculates GROWTH_PERCENTAGE correctly', () => {
+  it('calculates PERCENTAGE_CHANGE correctly', () => {
     const result = calculate(sampleScores, {
-      function: 'GROWTH_PERCENTAGE',
+      function: 'PERCENTAGE_CHANGE',
       column: 'Score',
     });
     // First 10, last 40 -> ((40 - 10) / 10) * 100 = 300%
     expect(result.value).toBe(300);
+  });
+
+  const salesRecords = [
+    { Date: '2026-01-15', Category: 'Electronics', Product: 'Laptop', Revenue: 1000 },
+    { Date: '2026-01-20', Category: 'Electronics', Product: 'Phone', Revenue: 500 },
+    { Date: '2026-02-10', Category: 'Furniture', Product: 'Desk', Revenue: 300 },
+    { Date: '2026-02-25', Category: 'Electronics', Product: 'Laptop', Revenue: 1200 },
+    { Date: '2026-03-05', Category: 'Furniture', Product: 'Chair', Revenue: 200 },
+  ];
+
+  it('calculates COUNT_UNIQUE correctly (Section 22: count unique categories and products)', () => {
+    const result = calculate(salesRecords, {
+      function: 'COUNT_UNIQUE',
+      column: 'Category',
+    });
+    expect(result.value).toBe(2); // Electronics, Furniture
+
+    const productUniques = calculate(salesRecords, {
+      function: 'COUNT_UNIQUE',
+      column: 'Product',
+    });
+    expect(productUniques.value).toBe(4); // Laptop, Phone, Desk, Chair
+  });
+
+  it('calculates COMPARE_CATEGORIES correctly', () => {
+    const result = calculate(salesRecords, {
+      function: 'COMPARE_CATEGORIES',
+      column: 'Category',
+      parameters: { valueColumn: 'Revenue' },
+    });
+    expect(Array.isArray(result.value)).toBe(true);
+    const groups = result.value as { group: string; value: number }[];
+    const electronics = groups.find((g) => g.group === 'Electronics');
+    const furniture = groups.find((g) => g.group === 'Furniture');
+    expect(electronics?.value).toBe(2700); // 1000 + 500 + 1200
+    expect(furniture?.value).toBe(500); // 300 + 200
+  });
+
+  it('calculates COMPARE_PERIODS correctly', () => {
+    const result = calculate(salesRecords, {
+      function: 'COMPARE_PERIODS',
+      column: 'Date',
+      parameters: { valueColumn: 'Revenue', dateColumn: 'Date' },
+    });
+    expect(Array.isArray(result.value)).toBe(true);
+    const periods = result.value as { group: string; value: number }[];
+    expect(periods.length).toBe(2);
+    expect(periods[0].group).toBe('Previous Period');
+    expect(periods[1].group).toBe('Current Period');
+  });
+
+  it('calculates MONTHLY_TOTAL correctly', () => {
+    const result = calculate(salesRecords, {
+      function: 'MONTHLY_TOTAL',
+      column: 'Date',
+      parameters: { valueColumn: 'Revenue', dateColumn: 'Date' },
+    });
+    expect(Array.isArray(result.value)).toBe(true);
+    const months = result.value as { group: string; value: number }[];
+    expect(months.find((m) => m.group === '2026-01')?.value).toBe(1500);
+    expect(months.find((m) => m.group === '2026-02')?.value).toBe(1500);
+    expect(months.find((m) => m.group === '2026-03')?.value).toBe(200);
+  });
+
+  it('calculates DAILY_TOTAL correctly', () => {
+    const result = calculate(salesRecords, {
+      function: 'DAILY_TOTAL',
+      column: 'Date',
+      parameters: { valueColumn: 'Revenue', dateColumn: 'Date' },
+    });
+    expect(Array.isArray(result.value)).toBe(true);
+    const days = result.value as { group: string; value: number }[];
+    expect(days.find((d) => d.group === '2026-01-15')?.value).toBe(1000);
+  });
+
+  it('calculates YEARLY_TOTAL correctly', () => {
+    const result = calculate(salesRecords, {
+      function: 'YEARLY_TOTAL',
+      column: 'Date',
+      parameters: { valueColumn: 'Revenue', dateColumn: 'Date' },
+    });
+    expect(Array.isArray(result.value)).toBe(true);
+    const years = result.value as { group: string; value: number }[];
+    expect(years[0].group).toBe('2026');
+    expect(years[0].value).toBe(3200);
+  });
+
+  it('calculates GROWTH correctly', () => {
+    const result = calculate(salesRecords, {
+      function: 'GROWTH',
+      column: 'Revenue',
+      parameters: { dateColumn: 'Date' },
+    });
+    // First revenue 1000, last revenue 200 -> ((200 - 1000)/1000)*100 = -80%
+    expect(result.value).toBe(-80);
+  });
+
+  it('calculates SORT correctly', () => {
+    const result = calculate(salesRecords, {
+      function: 'SORT',
+      column: 'Revenue',
+      parameters: { direction: 'desc' },
+    });
+    const sorted = result.value as typeof salesRecords;
+    expect(sorted[0].Revenue).toBe(1200);
+    expect(sorted[sorted.length - 1].Revenue).toBe(200);
   });
 });
 

@@ -4,20 +4,18 @@ import { useI18n } from '../../lib/i18n';
 import {
   LayoutDashboard,
   FileSpreadsheet,
-  LineChart,
-  Briefcase,
-  Globe2,
+  BookmarkCheck,
+  Settings,
 } from 'lucide-react';
 
 export const MobileBottomBar: React.FC = () => {
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
 
   const items = [
-    { to: '/dashboard', label: lang === 'uz' ? 'Asosiy' : 'Home', icon: LayoutDashboard },
-    { to: '/sheets', label: lang === 'uz' ? 'Jadvallar' : 'Sheets', icon: FileSpreadsheet },
-    { to: '/accounting', label: lang === 'uz' ? 'Buxgalteriya' : 'Accounting', icon: Briefcase },
-    { to: '/economy', label: lang === 'uz' ? 'Iqtisod' : 'Economy', icon: Globe2 },
-    { to: '/analytics', label: lang === 'uz' ? 'Tahlil' : 'Analytics', icon: LineChart },
+    { to: '/dashboard', label: t('dashboard'), icon: LayoutDashboard },
+    { to: '/sheets', label: t('mySheets'), icon: FileSpreadsheet },
+    { to: '/saved-analyses', label: t('savedAnalyses'), icon: BookmarkCheck },
+    { to: '/settings', label: t('settings'), icon: Settings },
   ];
 
   return (

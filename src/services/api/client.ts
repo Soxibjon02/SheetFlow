@@ -1,7 +1,8 @@
-import { SheetData, SheetPreviewResult, SheetRow } from '../../core/types/sheet';
+import { SheetData, SheetPreviewResult, SheetRow, ColumnDefinition } from '../../core/types/sheet';
 import { CalculationRequest, CalculationResult } from '../../core/types/calculation';
 import { SheetAnalysisReport } from '../../core/analyzer/dataAnalyzer';
 import { DashboardConfig } from '../../core/types/dashboard';
+import { SavedAnalysis } from '../../core/types/analysis';
 import { mockService } from '../mock/mockService';
 
 /**
@@ -110,6 +111,53 @@ class SheetFlowApiClient {
 
   async saveDashboard(dashboard: DashboardConfig): Promise<DashboardConfig> {
     return mockService.saveDashboard(dashboard);
+  }
+
+  // Saved Analyses methods
+  async getSavedAnalyses(): Promise<SavedAnalysis[]> {
+    return mockService.getSavedAnalyses();
+  }
+
+  async getSavedAnalysisById(id: string): Promise<SavedAnalysis> {
+    return mockService.getSavedAnalysisById(id);
+  }
+
+  async saveAnalysis(analysis: Partial<SavedAnalysis>): Promise<SavedAnalysis> {
+    return mockService.saveAnalysis(analysis);
+  }
+
+  async updateAnalysis(id: string, updates: Partial<SavedAnalysis>): Promise<SavedAnalysis> {
+    return mockService.updateAnalysis(id, updates);
+  }
+
+  async deleteAnalysis(id: string): Promise<boolean> {
+    return mockService.deleteAnalysis(id);
+  }
+
+  // Local-first sheet changes saving
+  async saveSheetChanges(
+    sheetId: string,
+    rows: Record<string, any>[],
+    columns?: ColumnDefinition[]
+  ): Promise<SheetData> {
+    return mockService.saveSheetChanges(sheetId, rows, columns);
+  }
+
+  // Recent tracking methods
+  trackSheetOpened(sheetId: string) {
+    mockService.trackSheetOpened(sheetId);
+  }
+
+  trackAnalysisOpened(analysisId: string) {
+    mockService.trackAnalysisOpened(analysisId);
+  }
+
+  async getRecentSheets(): Promise<any[]> {
+    return mockService.getRecentSheets();
+  }
+
+  async getRecentAnalyses(): Promise<SavedAnalysis[]> {
+    return mockService.getRecentAnalyses();
   }
 }
 

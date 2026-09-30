@@ -70,34 +70,39 @@ export const dashboards = pgTable('dashboards', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const reports = pgTable('reports', {
+export const savedAnalyses = pgTable('saved_analyses', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   connectedSheetId: uuid('connected_sheet_id').references(() => connectedSheets.id, { onDelete: 'cascade' }).notNull(),
   name: text('name').notNull(),
+  functionName: text('function_name').notNull(),
   configurationJson: jsonb('configuration_json').notNull(),
-  generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow().notNull(),
+  visualizationType: text('visualization_type').default('kpi').notNull(),
+  lastCalculatedAt: timestamp('last_calculated_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const templates = pgTable('templates', {
+export const savedResults = pgTable('saved_results', {
   id: uuid('id').defaultRandom().primaryKey(),
-  name: text('name').notNull(),
-  description: text('description').notNull(),
-  category: text('category').notNull(), // Education, Business, Personal, Project Management
-  configurationJson: jsonb('configuration_json').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  analysisId: uuid('analysis_id').references(() => savedAnalyses.id, { onDelete: 'cascade' }).notNull(),
+  resultDataJson: jsonb('result_data_json').notNull(),
+  insightsJson: jsonb('insights_json'),
+  calculatedAt: timestamp('calculated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const userSettings = pgTable('user_settings', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  currency: text('currency').default('USD').notNull(), // 'USD' | 'UZS' | 'EUR' | 'GBP'
+  dateFormat: text('date_format').default('YYYY-MM-DD').notNull(), // 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'MM/DD/YYYY'
   language: text('language').default('en').notNull(), // 'uz' | 'en'
   theme: text('theme').default('dark').notNull(), // 'dark' | 'light' | 'system'
   timezone: text('timezone').default('Asia/Tashkent').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
 
 export const auditLogs = pgTable('audit_logs', {
   id: uuid('id').defaultRandom().primaryKey(),

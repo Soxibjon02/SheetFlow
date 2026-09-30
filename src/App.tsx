@@ -10,14 +10,8 @@ import { AppLayout } from './components/layout/AppLayout';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { MySheetsPage } from './pages/sheets/MySheetsPage';
 import { SheetDetailPage } from './pages/sheets/SheetDetailPage';
-import { AnalyticsPage } from './pages/analytics/AnalyticsPage';
-import { CalculationsPage } from './pages/calculations/CalculationsPage';
-import { DashboardsPage } from './pages/dashboards/DashboardsPage';
-import { TemplatesPage } from './pages/templates/TemplatesPage';
-import { ReportsPage } from './pages/reports/ReportsPage';
+import { SavedAnalysesPage } from './pages/saved-analyses/SavedAnalysesPage';
 import { SettingsPage } from './pages/settings/SettingsPage';
-import { AccountingPage } from './pages/accounting/AccountingPage';
-import { EconomyPage } from './pages/economy/EconomyPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,13 +36,7 @@ export default function App() {
                     <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/sheets" element={<MySheetsPage />} />
                     <Route path="/sheets/:id" element={<SheetDetailPage />} />
-                    <Route path="/analytics" element={<AnalyticsPage />} />
-                    <Route path="/calculations" element={<CalculationsPage />} />
-                    <Route path="/dashboards" element={<DashboardsPage />} />
-                    <Route path="/accounting" element={<AccountingPage />} />
-                    <Route path="/economy" element={<EconomyPage />} />
-                    <Route path="/templates" element={<TemplatesPage />} />
-                    <Route path="/reports" element={<ReportsPage />} />
+                    <Route path="/saved-analyses" element={<SavedAnalysesPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                     <Route path="*" element={<Navigate to="/dashboard" replace />} />
                   </Route>
