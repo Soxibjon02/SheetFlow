@@ -15,12 +15,54 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
+import { neonService } from '../../services/db/neonService';
+
 export const SettingsPage: React.FC = () => {
   const { user, connectGoogle, disconnectGoogle } = useAuth();
   const { theme, setTheme } = useTheme();
   const { lang, setLang, currency, setCurrency, dateFormat, setDateFormat, t } = useI18n();
 
   const [notification, setNotification] = useState<string | null>(null);
+
+  // Neon Postgres state
+  const [neonUrlInput, setNeonUrlInput] = useState(neonService.getDatabaseUrl() || '');
+  const [isNeonConnected, setIsNeonConnected] = useState(neonService.isConfigured());
+  const [isTestingNeon, setIsTestingNeon] = useState(false);
+  const [neonStatusMsg, setNeonStatusMsg] = useState<string | null>(null);
+
+  const handleConnectNeon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsTestingNeon(true);
+    setNeonStatusMsg(null);
+    try {
+      const res = await neonService.setDatabaseUrl(neonUrlInput);
+      if (res.success) {
+        setIsNeonConnected(true);
+        showNotice(res.message);
+      } else {
+        setNeonStatusMsg(res.message);
+      }
+    } finally {
+      setIsTestingNeon(false);
+    }
+  };
+
+  const handleDisconnectNeon = () => {
+    neonService.disconnect();
+    setIsNeonConnected(false);
+    setNeonUrlInput('');
+    showNotice(lang === 'uz' ? 'Neon Postgres bazasi uzildi.' : 'Neon Postgres disconnected.');
+  };
+
+  const handleTestNeon = async () => {
+    setIsTestingNeon(true);
+    try {
+      const res = await neonService.testConnection();
+      showNotice(res.message);
+    } finally {
+      setIsTestingNeon(false);
+    }
+  };
 
   // Profile form state
   const [name, setName] = useState(user?.name || 'Soxibjon');
@@ -135,6 +177,118 @@ export const SettingsPage: React.FC = () => {
               </button>
             )}
           </div>
+        </div>
+
+        {/* 2. Neon PostgreSQL Database Integration (Section 53 & 54) */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 backdrop-blur-md p-6 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  {lang === 'uz' ? 'Neon PostgreSQL Ma’lumotlar Bazasi' : 'Neon PostgreSQL Database'}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {lang === 'uz'
+                    ? 'Jadvallar, hisoblashlar va tahlillarni xavfsiz saqlash uchun serverless bulut bazasi'
+                    : 'Serverless cloud PostgreSQL for persisting connected sheets, metadata, and saved analyses'}
+                </p>
+              </div>
+            </div>
+
+            <span
+              className={`text-xs px-2.5 py-1 rounded-full font-semibold border flex items-center space-x-1.5 ${
+                isNeonConnected
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${isNeonConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}
+              ></span>
+              <span>{isNeonConnected ? (lang === 'uz' ? 'Ulangan' : 'Connected') : (lang === 'uz' ? 'Ulanmagan' : 'Not Connected')}</span>
+            </span>
+          </div>
+
+          {isNeonConnected ? (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400 block text-[11px]">
+                    {lang === 'uz' ? 'Faol ulanish havolasi (Masked):' : 'Active Connection String:'}
+                  </span>
+                  <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold break-all">
+                    {neonService.getMaskedUrl()}
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    disabled={isTestingNeon}
+                    onClick={handleTestNeon}
+                    className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold transition cursor-pointer"
+                  >
+                    {isTestingNeon ? 'Tekshirilmoqda...' : lang === 'uz' ? 'Tekshirish' : 'Test Ping'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisconnectNeon}
+                    className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-xs font-semibold transition cursor-pointer"
+                  >
+                    {lang === 'uz' ? 'Uzish' : 'Disconnect'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleConnectNeon} className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  {lang === 'uz' ? 'Neon Connection String (DATABASE_URL):' : 'Neon Connection String:'}
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder="postgresql://user:password@ep-cool-cloud-12345.us-east-2.aws.neon.tech/sheetflow?sslmode=require"
+                    value={neonUrlInput}
+                    onChange={(e) => setNeonUrlInput(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {lang === 'uz'
+                    ? 'Neon.tech boshqaruv panelidan (Dashboard -> Connection Details -> Connection String) havolani nusxalab bu yerga qo‘ying.'
+                    : 'Copy your connection string from the Neon console (Dashboard -> Connection Details).'}
+                </p>
+              </div>
+
+              {neonStatusMsg && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs">
+                  {neonStatusMsg}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end">
+                <button
+                  type="submit"
+                  disabled={isTestingNeon || !neonUrlInput.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/20 transition cursor-pointer disabled:opacity-50"
+                >
+                  {isTestingNeon
+                    ? lang === 'uz'
+                      ? 'Ulanish tekshirilmoqda...'
+                      : 'Connecting...'
+                    : lang === 'uz'
+                    ? 'Ulanish va Saqlash'
+                    : 'Connect & Save'}
+                </button>
+              </div>
+            </form>
+          )}
         </div>
 
         {/* 2. Language & Appearance (Section 28) */}
